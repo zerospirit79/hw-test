@@ -1,1 +1,1 @@
-print("s07_upgrade: ok")\n
+print("s07_upgrade: ok")

@@ -1,1 +1,1 @@
-print("s11_01_user_session: ok")\n
+print("s11_01_user_session: ok")

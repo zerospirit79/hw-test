@@ -1,1 +1,1 @@
-print("s09_express_test: ok")\n
+print("s09_express_test: ok")

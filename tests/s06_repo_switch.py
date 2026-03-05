@@ -1,1 +1,1 @@
-print("s06_repo_switch: ok")\n
+print("s06_repo_switch: ok")

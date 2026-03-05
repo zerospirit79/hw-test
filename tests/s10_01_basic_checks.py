@@ -1,1 +1,1 @@
-print("s10_01_basic_checks: ok")\n
+print("s10_01_basic_checks: ok")

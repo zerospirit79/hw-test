@@ -1,1 +1,1 @@
-print("s05_prechecks: ok")\n
+print("s05_prechecks: ok")
