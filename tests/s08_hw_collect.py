@@ -1,0 +1,1 @@
+print("s08_hw_collect: ok")\n

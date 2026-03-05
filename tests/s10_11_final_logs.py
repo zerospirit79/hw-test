@@ -1,0 +1,1 @@
+print("s10_11_final_logs: ok")\n

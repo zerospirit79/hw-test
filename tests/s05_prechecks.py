@@ -1,0 +1,1 @@
+print("s05_prechecks: ok")\n

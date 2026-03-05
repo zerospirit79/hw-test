@@ -1,0 +1,1 @@
+print("s07_upgrade: ok")\n

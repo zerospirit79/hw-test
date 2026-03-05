@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hw-test"
+version = "0.1.0"
+description = "ALT Linux hardware express test tool"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{name = "Pavel Shilov", email = "zerospirit@altlinux.org"}]
+license = {file = "LICENSE"}
+dependencies = []
+
+[project.scripts]
+hw-test = "hw_test.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+exclude = []

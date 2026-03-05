@@ -1,0 +1,1 @@
+print("s11_02_multimedia_keys: ok")\n

@@ -1,0 +1,1 @@
+print("Runner placeholder — используйте отдельные сценарии s05..s11")\n

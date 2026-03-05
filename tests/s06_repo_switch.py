@@ -1,0 +1,1 @@
+print("s06_repo_switch: ok")\n
