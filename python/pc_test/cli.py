@@ -4,6 +4,7 @@ from pc_test.diag import run as diag_run
 from pc_test.collect import run as collect_run
 from pc_test.smart import run as smart_run
 from pc_test.sensors import run as sensors_run
+from pc_test.bench import run as bench_run
 
 def project_root() -> Path:
     # python/pc_test/ -> python/ -> <repo root>
@@ -49,6 +50,21 @@ def main():
             return 1
     p_run.set_defaults(handler=_run_bash)
 
+    # bench (CPU/RAM/IO)
+    p_bench.add_argument("--duration", type=int, default=15, help="Длительность CPU‑теста, сек")
+    p_bench.add_argument("--cpus", type=int, default=0, help="Число потоков CPU (0 = все)")
+    p_bench.add_argument("--ram-mb", type=int, default=512, help="Объём на процесс RAM‑теста, МБ")
+    p_bench.add_argument("--io-size-mb", type=int, default=1024, help="Объём I/O, МБ")
+    p_bench.add_argument("--tmpdir", default=None, help="Каталог для временных файлов")
+    p_bench.add_argument("--json", action="store_true", help="JSON‑вывод")
+    p_bench.set_defaults(handler=lambda ns: bench_run(
+        json_out=ns.json,
+        duration=ns.duration,
+        cpus=ns.cpus,
+        ram_mb=ns.ram_mb,
+        io_size_mb=ns.io_size_mb,
+        tmpdir=ns.tmpdir
+    ))
     ns = parser.parse_args()
     rc = ns.handler(ns)
     if isinstance(rc, int):
