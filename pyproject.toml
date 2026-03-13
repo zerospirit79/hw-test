@@ -5,4 +5,4 @@ description = "ALT Linux compatibility testing tool (Python)"
 requires-python = ">=3.8"
 
 [project.scripts]
-pc-test = "pc_test.cli:main"
+pc-test = "hw_test.cli:main"

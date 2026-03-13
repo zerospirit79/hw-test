@@ -4,7 +4,7 @@ from .sources import render_sources_for_release
 from ..utils.cmd import run_cmd
 import shutil, logging, os, json
 
-log = logging.getLogger("pc_test.repo")
+log = logging.getLogger("hw_test.repo")
 
 SOURCES_DIR = Path("/etc/apt/sources.list.d")
 BACKUP_DIR = Path("/var/lib/pc-test/backup")

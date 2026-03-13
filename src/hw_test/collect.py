@@ -5,7 +5,7 @@ import shutil
 import datetime
 from pathlib import Path
 from typing import List, Tuple, Dict, Any
-from pc_test.utils.cmd import run_cmd
+from hw_test.utils.cmd import run_cmd
 
 DEFAULT_FILES = [
     "/var/log/syslog",

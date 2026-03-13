@@ -4,7 +4,7 @@ from ..sysinfo import os_info
 from ..repo.alt_repo import configure_by_info, dist_upgrade
 from ..testsuite.runner import run_suite
 
-log = logging.getLogger("pc_test.batch")
+log = logging.getLogger("hw_test.batch")
 
 def run_batch(profile_json: str) -> Dict[str,Any]:
     profile = json.loads(profile_json) if isinstance(profile_json, str) else profile_json

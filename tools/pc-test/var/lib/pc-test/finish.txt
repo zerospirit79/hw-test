@@ -1,3 +1,0 @@
-root	diskperf
-user	glmark
-root	finalize
