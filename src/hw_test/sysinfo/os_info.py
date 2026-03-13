@@ -27,12 +27,12 @@ def detect_branch(osr: Dict[str,str], rpm_release_text: str) -> str:
     vid = osr.get("VERSION_ID","").lower()
     if vid.startswith("11"): return "p11"
     if vid.startswith("10"): return "p10"
-        return "unknown"
-        return br
+    return "unknown"
+    return br
     vid = osr.get("VERSION_ID","").lower()
     if vid.startswith("11"): return "p11"
     if vid.startswith("10"): return "p10"
-        return "unknown"
+    return "unknown"
 
 def read_apt_sources() -> List[Dict[str,str]]:
     items: List[Dict[str,str]] = []
