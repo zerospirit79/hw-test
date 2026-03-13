@@ -37,7 +37,7 @@ def main():
     def _run_bash(ns):
         script = project_root() / "tools" / "pc-test" / ns.path
         if not script.exists():
-        print(f"Ошибка: не найден скрипт {script}", file=sys.stderr)
+            print(f"Ошибка: не найден скрипт {script}", file=sys.stderr)
             return 1
         import subprocess
         cmd = [str(script), *[str(a) for a in ns.args if a != ""]]
