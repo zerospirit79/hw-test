@@ -3,3 +3,4 @@ psutil
 pyyaml
 packaging
 rich
+smartmontools
