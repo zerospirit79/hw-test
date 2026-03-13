@@ -23,6 +23,11 @@ def detect_branch(osr: Dict[str,str], rpm_release_text: str) -> str:
         return "sisyphus"
     for br in ("p11","p10","p9","c10f2","c9f2"):
         if re.search(rf"\b{br}\b", t):
+            return br
+    vid = osr.get("VERSION_ID","").lower()
+    if vid.startswith("11"): return "p11"
+    if vid.startswith("10"): return "p10"
+        return "unknown"
         return br
     vid = osr.get("VERSION_ID","").lower()
     if vid.startswith("11"): return "p11"

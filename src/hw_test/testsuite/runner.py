@@ -11,6 +11,7 @@ def run_suite(suites: List[str], ctx: Dict[str,Any] | None = None) -> Dict[str,A
     plan: List[str] = []
     for s in suites:
         if s == "basic":
+            plan.append("net.ping_external")
         plan.append("net.ping_external")
     for name in plan:
         cls = REGISTRY.get(name)
