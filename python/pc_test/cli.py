@@ -3,6 +3,7 @@ from pathlib import Path
 from pc_test.diag import run as diag_run
 from pc_test.collect import run as collect_run
 from pc_test.smart import run as smart_run
+from pc_test.sensors import run as sensors_run
 
 def project_root() -> Path:
     # python/pc_test/ -> python/ -> <repo root>
