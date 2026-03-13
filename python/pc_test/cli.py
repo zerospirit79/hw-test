@@ -2,6 +2,7 @@ import argparse, sys
 from pathlib import Path
 from pc_test.diag import run as diag_run
 from pc_test.collect import run as collect_run
+from pc_test.smart import run as smart_run
 
 def project_root() -> Path:
     # python/pc_test/ -> python/ -> <repo root>
@@ -24,13 +25,19 @@ def main():
     p_collect.set_defaults(handler=lambda ns: collect_run(out=ns.out, json_out=ns.json))
 
     # универсальный режим для оставшихся bash-скриптов
+    # smart (Python)
+    p_smart = subparsers.add_parser("smart", help="Проверка S.M.A.R.T. устройств")
+    p_smart.add_argument("--dev", action="append", help="Устройство (можно несколько флагов --dev)")
+    p_smart.add_argument("--json", action="store_true", help="JSON-вывод")
+    p_smart.set_defaults(handler=lambda ns: smart_run(devices=ns.dev, json_out=ns.json))
+
     p_run = subparsers.add_parser("run", help="Запустить bash-скрипт из tools/pc-test по относительному пути")
     p_run.add_argument("path", help="Относительный путь внутри tools/pc-test (например, scripts/legacy.sh)")
     p_run.add_argument("args", nargs=argparse.REMAINDER, help="Аргументы для скрипта")
     def _run_bash(ns):
         script = project_root() / "tools" / "pc-test" / ns.path
         if not script.exists():
-        print(f"Ошибка: не найден скрипт {script}", file=sys.stderr)
+            print(f"Ошибка: не найден скрипт {script}", file=sys.stderr)
             return 1
         import subprocess
         cmd = [str(script), *[str(a) for a in ns.args if a != ""]]
