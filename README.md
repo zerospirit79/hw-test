@@ -30,3 +30,8 @@ hw-test — инструмент для экспресс‑проверки ра
 ./scripts/pc-test smart
 ./scripts/pc-test smart --dev /dev/sda --dev /dev/nvme0n1 --json
 ```
+Примеры sensors:
+```
+./scripts/pc-test sensors
+./scripts/pc-test sensors --json | jq .
+```
