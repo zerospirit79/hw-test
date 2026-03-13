@@ -51,6 +51,7 @@ def main():
     p_run.set_defaults(handler=_run_bash)
 
     # bench (CPU/RAM/IO)
+    p_bench = subparsers.add_parser("bench", help="Запустить набор тестов производительности", description="CPU, RAM и I/O бенчмарки",)
     p_bench.add_argument("--duration", type=int, default=15, help="Длительность CPU‑теста, сек")
     p_bench.add_argument("--cpus", type=int, default=0, help="Число потоков CPU (0 = все)")
     p_bench.add_argument("--ram-mb", type=int, default=512, help="Объём на процесс RAM‑теста, МБ")
