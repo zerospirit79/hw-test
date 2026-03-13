@@ -24,3 +24,9 @@ hw-test — инструмент для экспресс‑проверки ра
     ```
 - Постепенная миграция bash → Python: логику переносим в python/pc_test/*.py и
   подменяем обработчики команд в python/pc_test/cli.py.
+
+Примеры SMART:
+```
+./scripts/pc-test smart
+./scripts/pc-test smart --dev /dev/sda --dev /dev/nvme0n1 --json
+```
