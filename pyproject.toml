@@ -1,26 +1,8 @@
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "hw-test"
+name = "pc-test"
 version = "0.1.0"
-description = "ALT Linux hardware express test tool"
-readme = "README.md"
+description = "ALT Linux compatibility testing tool (Python)"
 requires-python = ">=3.8"
-authors = [{name = "Pavel Shilov", email = "zerospirit@altlinux.org"}]
-license = {file = "LICENSE"}
-dependencies = []
 
 [project.scripts]
-hw-test = "hw_test.cli:main"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-exclude = []
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_.py", "test.py", "s*.py"]
-python_classes = ["Test*", "S*"]
-python_functions = ["test", "s"]
+pc-test = "hw_test.cli:main"

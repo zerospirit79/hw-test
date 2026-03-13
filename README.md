@@ -1,37 +1,25 @@
-hw-test — инструмент для экспресс‑проверки рабочих станций ALT Linux (p10/p11/c10f2/c11f1).
+hw-test (Python)
+— Автоопределение установленного релиза ALT/Альт СП.
+— Конфигурирование репозиториев (internet/usb/lan) и обновление.
+— Пакетный режим (--batch).
+— Базовые автотесты (ping).
 
-Быстрый старт:
-1. python3 -m pip install -e .
-2. hw-test --help
-3. hw-test --branch p11 --mode online --finish -n TEST
-## PC Test интеграция
+Примеры:
+1) Показать детект:
+   hw-test detect
 
-- Импортировано содержимое репозитория pc-test в tools/pc-test.
-- Добавлен единый Python CLI:
-  - Установка зависимостей:
-    ```
-    python3 -m venv .venv
-    . .venv/bin/activate
-    pip install -r requirements.txt
-    ```
-  - Запуск:
-    ```
-    ./scripts/pc-test --help
-    ./scripts/pc-test diag
-    ./scripts/pc-test collect --out ./logs
-    # универсальный режим вызова bash-скриптов
-    ./scripts/pc-test run scripts/diag.sh -- --json
-    ```
-- Постепенная миграция bash → Python: логику переносим в python/pc_test/*.py и
-  подменяем обработчики команд в python/pc_test/cli.py.
+2) Настроить репозитории по текущей системе (интернет):
+   sudo hw-test repo --source internet
 
-Примеры SMART:
-```
-./scripts/pc-test smart
-./scripts/pc-test smart --dev /dev/sda --dev /dev/nvme0n1 --json
-```
-Примеры sensors:
-```
-./scripts/pc-test sensors
-./scripts/pc-test sensors --json | jq .
-```
+3) Обновить систему:
+   sudo hw-test upgrade
+
+4) Запустить базовый тест:
+   hw-test test --suite basic
+
+5) Пакетный режим (автоопределение релиза, апдейт, тесты):
+   hw-test batch '{ "repo_source":"internet", "auto_upgrade_on_boot": true, "tests": ["basic"] }'
+
+Внимание:
+— Замените URL в hw_test/repo/sources.py на ваши зеркала ALT (HTTP/LAN/USB).
+— Для операций с пакетами требуются root-права.
