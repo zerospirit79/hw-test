@@ -1,0 +1,46 @@
+# hw-test configuration file
+# Installed as /etc/hw-test.conf
+# User overrides can be placed in ~/.config/hw-test.conf
+
+[settings]
+# System update options
+update_apt_lists = true
+dist_upgrade = true
+update_kernel = true
+
+# Local mirror configuration (optional)
+# local_url = http://mirror.example.com/altlinux
+# local_mirror = myserver /mnt/mirror
+# mirror_subdir = ALT/Linux/Sisyphus
+# local_media_base = /media
+# local_media_labels = ALT-Linux-10.2,ALT-Linux-10.2-DVD1
+# local_media_check = ALT
+
+# Console colors: auto, always, never
+color_mode = auto
+
+# Testing options
+unsafe_diskperf = false
+disable_autorun = false
+ping_server = ya.ru
+express_video_set = vkvideo
+# local_video_sample = /path/to/local/video.mp4
+
+# Runtime settings
+batch_mode = false
+verbose = false
+lang_id = ru
+
+# Paths
+data_dir = /var/lib/hw-test
+log_dir = /var/log/hw-test
+
+# Computer name (auto-detected if empty)
+compname =
+
+# Repository date for archive naming (YYYY-MM-DD format)
+# repodate =
+
+# Test selection (comma-separated, empty = all tests)
+# selected_tests = prepare,upgrade,hardware_detection,express_test
+# skip_tests = performance,glmark
