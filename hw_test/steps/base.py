@@ -25,6 +25,7 @@ class BaseHWStep(ABC):
     name: str = "Base Step"
     description: str = "Base test step"
     requires_root: bool = False
+    required_privileges: bool = False  # Alias for requires_root (for CLI compatibility)
     timeout_seconds: int = 300
 
     def __init__(self, config: TestConfig, hardware_info: Optional[HardwareInfo] = None):
@@ -63,7 +64,9 @@ class BaseHWStep(ABC):
         """
         pass
 
-    def run_command(self, cmd: List[str], timeout: int = 30, use_root: bool = False) -> Tuple[str, str, int]:
+    def run_command(
+        self, cmd: List[str], timeout: int = 30, use_root: bool = False
+    ) -> Tuple[str, str, int]:
         """
         Run a command, optionally as root.
 
@@ -81,13 +84,9 @@ class BaseHWStep(ABC):
             return run_as_root(cmd, timeout)
         else:
             import subprocess
+
             try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout
-                )
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
                 return result.stdout, result.stderr, result.returncode
             except subprocess.TimeoutExpired:
                 self.logger.warning(f"Command timed out: {' '.join(cmd)}")
@@ -111,7 +110,7 @@ class BaseHWStep(ABC):
                 step_name=self.name,
                 status=TestStatus.ERROR,
                 message="Setup failed",
-                errors=["Step setup failed"]
+                errors=["Step setup failed"],
             )
 
         try:
@@ -139,7 +138,7 @@ class BaseHWStep(ABC):
                 status=TestStatus.ERROR,
                 message=f"Exception during execution: {str(e)}",
                 errors=[str(e)],
-                duration_seconds=time.time() - start_time
+                duration_seconds=time.time() - start_time,
             )
 
         finally:

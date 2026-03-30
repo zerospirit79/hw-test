@@ -3,6 +3,8 @@
 Provides state persistence to allow test continuation after reboot.
 """
 
+from __future__ import annotations
+
 import json
 import os
 from datetime import datetime
@@ -36,7 +38,7 @@ class TestState:
             return False
 
         try:
-            with open(self.state_file, 'r', encoding='utf-8') as f:
+            with open(self.state_file, "r", encoding="utf-8") as f:
                 self.state = json.load(f)
             return True
         except (json.JSONDecodeError, IOError) as e:
@@ -52,9 +54,15 @@ class TestState:
         """
         try:
             os.makedirs(self.state_dir, exist_ok=True)
-            with open(self.state_file, 'w', encoding='utf-8') as f:
+            with open(self.state_file, "w", encoding="utf-8") as f:
                 json.dump(self.state, f, indent=2, ensure_ascii=False)
             return True
+        except PermissionError as e:
+            print(
+                f"⚠ Ошибка прав доступа к {self.state_dir}. "
+                f"Убедитесь, что у вас есть права на запись в эту директорию."
+            )
+            return False
         except IOError as e:
             print(f"⚠ Не удалось сохранить состояние: {e}")
             return False
@@ -90,15 +98,18 @@ class TestState:
         self.state["last_update"] = datetime.now().isoformat()
         self.save()
 
-    def mark_step_completed(self, step_name: str, result: StepResult) -> None:
+    def mark_step_completed(self, step_name: str, result: StepResult) -> bool:
         """
         Mark a step as completed.
 
         Args:
             step_name: Name of the completed step
             result: Step result
+
+        Returns:
+            True if state was saved successfully, False otherwise
         """
-        if step_name in self.state["current_step"]:
+        if self.state["current_step"] is not None and step_name in self.state["current_step"]:
             self.state["current_step"] = None
 
         self.state["completed_steps"].append(step_name)
@@ -111,7 +122,7 @@ class TestState:
             "warnings": result.warnings,
         }
         self.state["last_update"] = datetime.now().isoformat()
-        self.save()
+        return self.save()
 
     def mark_step_failed(self, step_name: str, error: str) -> None:
         """Mark a step as failed."""
@@ -147,25 +158,28 @@ class TestState:
         self.state["last_update"] = datetime.now().isoformat()
         self.save()
 
-    def mark_reboot_required(self, reason: str) -> None:
+    def mark_reboot_required(self, reason: str) -> bool:
         """
         Mark that a reboot is required.
 
         Args:
             reason: Reason for reboot
+
+        Returns:
+            True if state was saved successfully, False otherwise
         """
         self.state["requires_reboot"] = True
         self.state["reboot_reason"] = reason
         self.state["last_update"] = datetime.now().isoformat()
-        self.save()
+        return self.save()
 
-    def clear_reboot_flag(self) -> None:
+    def clear_reboot_flag(self) -> bool:
         """Clear reboot requirement after reboot."""
         self.state["requires_reboot"] = False
         self.state["reboot_reason"] = None
         self.state["reboot_count"] = self.state.get("reboot_count", 0) + 1
         self.state["last_update"] = datetime.now().isoformat()
-        self.save()
+        return self.save()
 
     def finalize(self, status: str = "completed") -> None:
         """
@@ -200,11 +214,9 @@ class TestState:
     def is_resumed_test(self) -> bool:
         """Check if this is a resumed test after reboot."""
         return (
-            self.state.get("status") == "running"
-            and self.state.get("current_step") is not None
+            self.state.get("status") == "running" and self.state.get("current_step") is not None
         ) or (
-            self.state.get("status") == "running"
-            and len(self.state.get("completed_steps", [])) > 0
+            self.state.get("status") == "running" and len(self.state.get("completed_steps", [])) > 0
         )
 
     def get_summary(self) -> Dict[str, Any]:

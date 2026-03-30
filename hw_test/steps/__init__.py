@@ -1,5 +1,9 @@
 """Steps package for HW-Test."""
 
+from __future__ import annotations
+
+from typing import List
+
 from hw_test.steps.base import BaseHWStep
 from hw_test.steps.step_01_hardware_detection import HardwareDetectionStep
 from hw_test.steps.step_02_express_test import ExpressTestStep
@@ -18,62 +22,62 @@ from hw_test.steps.step_14_glmark import GlmarkStep
 from hw_test.steps.step_15_finalize import FinalizeStep
 
 __all__ = [
-    'BaseHWStep',
-    'HardwareDetectionStep',
-    'ExpressTestStep',
-    'SystemCheckStep',
-    'PerformanceStep',
-    'FirmwareCheckStep',
-    'LogCollectionStep',
-    'RebootStep',
-    'RebootAndContinueStep',
-    'PrepareStep',
-    'UpgradeStep',
-    'ConfigStep',
-    'SyslogsStep',
-    'CpuPowerStep',
-    'DiskPerfStep',
-    'GlmarkStep',
-    'FinalizeStep',
+    "BaseHWStep",
+    "HardwareDetectionStep",
+    "ExpressTestStep",
+    "SystemCheckStep",
+    "PerformanceStep",
+    "FirmwareCheckStep",
+    "LogCollectionStep",
+    "RebootStep",
+    "RebootAndContinueStep",
+    "PrepareStep",
+    "UpgradeStep",
+    "ConfigStep",
+    "SyslogsStep",
+    "CpuPowerStep",
+    "DiskPerfStep",
+    "GlmarkStep",
+    "FinalizeStep",
 ]
 
 # Registry of all available steps
 AVAILABLE_STEPS = {
-    'hardware_detection': HardwareDetectionStep,
-    'express_test': ExpressTestStep,
-    'system_check': SystemCheckStep,
-    'performance': PerformanceStep,
-    'firmware_check': FirmwareCheckStep,
-    'log_collection': LogCollectionStep,
-    'reboot': RebootStep,
-    'reboot_and_continue': RebootAndContinueStep,
-    'prepare': PrepareStep,
-    'upgrade': UpgradeStep,
-    'config': ConfigStep,
-    'syslogs': SyslogsStep,
-    'cpupower': CpuPowerStep,
-    'diskperf': DiskPerfStep,
-    'glmark': GlmarkStep,
-    'finalize': FinalizeStep,
+    "hardware_detection": HardwareDetectionStep,
+    "express_test": ExpressTestStep,
+    "system_check": SystemCheckStep,
+    "performance": PerformanceStep,
+    "firmware_check": FirmwareCheckStep,
+    "log_collection": LogCollectionStep,
+    "reboot": RebootStep,
+    "reboot_and_continue": RebootAndContinueStep,
+    "prepare": PrepareStep,
+    "upgrade": UpgradeStep,
+    "config": ConfigStep,
+    "syslogs": SyslogsStep,
+    "cpupower": CpuPowerStep,
+    "diskperf": DiskPerfStep,
+    "glmark": GlmarkStep,
+    "finalize": FinalizeStep,
 }
 
 # Default step execution order (matches pc-test bash order)
 DEFAULT_STEP_ORDER = [
-    'prepare',
-    'upgrade',
-    'hardware_detection',
-    'config',
-    'firmware_check',
-    'syslogs',
-    'express_test',
-    'cpupower',
-    'diskperf',
-    'glmark',
-    'system_check',
-    'performance',
-    'reboot_and_continue',
-    'log_collection',
-    'finalize',
+    "prepare",
+    "upgrade",
+    "hardware_detection",
+    "config",
+    "firmware_check",
+    "syslogs",
+    "express_test",
+    "cpupower",
+    "diskperf",
+    "glmark",
+    "system_check",
+    "performance",
+    "reboot_and_continue",
+    "log_collection",
+    "finalize",
 ]
 
 
@@ -82,6 +86,6 @@ def get_step_class(step_name: str):
     return AVAILABLE_STEPS.get(step_name)
 
 
-def get_available_steps() -> list[str]:
+def get_available_steps() -> List[str]:
     """Get list of available step names."""
     return list(AVAILABLE_STEPS.keys())

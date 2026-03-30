@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 
 class TestStatus(Enum):
     """Status of a test step."""
+
     PASSED = "passed"
     FAILED = "failed"
     WARNING = "warning"
@@ -16,6 +17,7 @@ class TestStatus(Enum):
 
 class TestResult(Enum):
     """Result type for hardware tests."""
+
     SUCCESS = "success"
     FAILURE = "failure"
     PARTIAL = "partial"
@@ -25,6 +27,7 @@ class TestResult(Enum):
 @dataclass
 class HardwareInfo:
     """Information about detected hardware."""
+
     cpu_model: str = ""
     cpu_cores: int = 0
     cpu_threads: int = 0
@@ -49,6 +52,7 @@ class HardwareInfo:
 @dataclass
 class StepResult:
     """Result of a test step execution."""
+
     step_name: str
     status: TestStatus
     message: str = ""
@@ -61,6 +65,7 @@ class StepResult:
 @dataclass
 class TestConfig:
     """Configuration for HW-Test execution."""
+
     name: str = "default"
     batch_mode: bool = False
     verbose: bool = False

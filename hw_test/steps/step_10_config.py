@@ -1,7 +1,9 @@
 """Step 3: Configuration."""
 
+from __future__ import annotations
+
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from hw_test.types import StepResult, TestStatus, HardwareInfo, TestConfig
 from hw_test.steps.base import BaseHWStep
@@ -10,7 +12,7 @@ from hw_test.steps.base import BaseHWStep
 class ConfigStep(BaseHWStep):
     """
     Defining a test plan.
-    
+
     Allows configuration of:
     - Test selection
     - Test parameters
@@ -27,91 +29,101 @@ class ConfigStep(BaseHWStep):
 
     def _check_gui_available(self) -> bool:
         """Check if GUI configuration is available."""
-        display = os.environ.get('DISPLAY')
+        display = os.environ.get("DISPLAY")
         if not display:
             return False
 
         # Check for yad (preferred GUI tool)
-        stdout, _, rc = self.run_command(['which', 'yad'])
+        stdout, _, rc = self.run_command(["which", "yad"])
         if rc == 0:
             return True
 
         # Check for dialog as fallback
-        stdout, _, rc = self.run_command(['which', 'dialog'])
+        stdout, _, rc = self.run_command(["which", "dialog"])
         return rc == 0
 
     def _detect_test_capabilities(self) -> Dict[str, bool]:
         """Detect available test capabilities."""
         capabilities = {
-            'fwupd_test': False,
-            'devel_test': False,
-            'xprss_test': False,
-            'infb_test': False,
-            'sound_test': False,
-            'numa_test': False,
-            'ipmi_test': False,
-            'webcam_test': False,
-            'power_test': False,
-            'fprnt_test': False,
-            'bluez_test': False,
-            'scard_test': False,
-            'fio_test': False,
-            'v3d_test': False,
+            "fwupd_test": False,
+            "devel_test": False,
+            "xprss_test": False,
+            "infb_test": False,
+            "sound_test": False,
+            "numa_test": False,
+            "ipmi_test": False,
+            "webcam_test": False,
+            "power_test": False,
+            "fprnt_test": False,
+            "bluez_test": False,
+            "scard_test": False,
+            "fio_test": False,
+            "v3d_test": False,
         }
 
         # Check for fwupd (firmware updates)
-        stdout, _, rc = self.run_command(['which', 'fwupdmgr'])
+        stdout, _, rc = self.run_command(["which", "fwupdmgr"])
         if rc == 0:
-            capabilities['fwupd_test'] = True
+            capabilities["fwupd_test"] = True
 
         # Check for Infiniband/RDMA
-        stdout, _, rc = self.run_command(['lspci'])
+        stdout, _, rc = self.run_command(["lspci"])
         if rc == 0:
-            if 'RDMA' in stdout or 'InfiniBand' in stdout:
-                capabilities['infb_test'] = True
+            if "RDMA" in stdout or "InfiniBand" in stdout:
+                capabilities["infb_test"] = True
 
         # Check for sound cards
-        stdout, _, rc = self.run_command(['aplay', '-l'])
-        if rc == 0 and 'card' in stdout:
-            capabilities['sound_test'] = True
+        stdout, _, rc = self.run_command(["aplay", "-l"])
+        if rc == 0 and "card" in stdout:
+            capabilities["sound_test"] = True
 
         # Check for NUMA
-        stdout, _, rc = self.run_command(['lscpu', '--parse=NODE'])
+        stdout, _, rc = self.run_command(["lscpu", "--parse=NODE"])
         if rc == 0:
             nodes = set()
-            for line in stdout.split('\n'):
-                if line and not line.startswith('#'):
-                    parts = line.split(',')
+            for line in stdout.split("\n"):
+                if line and not line.startswith("#"):
+                    parts = line.split(",")
                     if len(parts) >= 1 and parts[0].isdigit():
                         nodes.add(parts[0])
             if len(nodes) > 1:
-                capabilities['numa_test'] = True
+                capabilities["numa_test"] = True
 
         # Check for webcams
-        stdout, _, rc = self.run_command(['ls /dev/video* 2>/dev/null || true'], use_root=False)
-        if rc == 0 and '/dev/video' in stdout:
-            capabilities['webcam_test'] = True
+        stdout, _, rc = self.run_command(["ls /dev/video* 2>/dev/null || true"], use_root=False)
+        if rc == 0 and "/dev/video" in stdout:
+            capabilities["webcam_test"] = True
 
         # Check for fingerprint readers
-        stdout, _, rc = self.run_command(['lsusb'])
+        stdout, _, rc = self.run_command(["lsusb"])
         if rc == 0:
-            fp_keywords = ['Fingerprint', '298d:1010', '1c7a:', 'U.are.U', 'TouchChip',
-                          'TouchStrip', 'Elan MOC', 'Veridicom', 'Synaptics',
-                          'AuthenTec', 'Validity VFS']
+            fp_keywords = [
+                "Fingerprint",
+                "298d:1010",
+                "1c7a:",
+                "U.are.U",
+                "TouchChip",
+                "TouchStrip",
+                "Elan MOC",
+                "Veridicom",
+                "Synaptics",
+                "AuthenTec",
+                "Validity VFS",
+            ]
             for keyword in fp_keywords:
                 if keyword in stdout:
-                    capabilities['fprnt_test'] = True
+                    capabilities["fprnt_test"] = True
                     break
 
         # Check for Bluetooth
-        stdout, _, rc = self.run_command(['hciconfig', '-a'])
-        if rc == 0 and 'hci' in stdout:
-            capabilities['bluez_test'] = True
+        stdout, _, rc = self.run_command(["hciconfig", "-a"])
+        if rc == 0 and "hci" in stdout:
+            capabilities["bluez_test"] = True
 
         # Check for smart card readers
-        stdout, _, rc = self.run_command(['opensc-tool', '--list-readers'])
-        if rc == 0 and 'No smart card' not in stdout:
-            capabilities['scard_test'] = True
+        stdout, _, rc = self.run_command(["opensc-tool", "--list-readers"])
+        if rc == 0 and "No smart card" not in stdout:
+            capabilities["scard_test"] = True
 
         return capabilities
 
@@ -120,21 +132,23 @@ class ConfigStep(BaseHWStep):
         tests = []
 
         # Always include basic tests
-        tests.extend([
-            'hardware_detection',
-            'system_check',
-            'log_collection',
-        ])
+        tests.extend(
+            [
+                "hardware_detection",
+                "system_check",
+                "log_collection",
+            ]
+        )
 
         # Add capability-based tests
-        if capabilities.get('fwupd_test'):
-            tests.append('firmware_check')
+        if capabilities.get("fwupd_test"):
+            tests.append("firmware_check")
 
-        if capabilities.get('sound_test'):
-            tests.append('express_test')
+        if capabilities.get("sound_test"):
+            tests.append("express_test")
 
-        if capabilities.get('numa_test'):
-            tests.append('performance')
+        if capabilities.get("numa_test"):
+            tests.append("performance")
 
         return tests
 
@@ -157,11 +171,11 @@ class ConfigStep(BaseHWStep):
 
             # Build configuration
             self.config_options = {
-                'gui_available': gui_available,
-                'capabilities': capabilities,
-                'default_tests': default_tests,
-                'batch_mode': self.config.batch_mode,
-                'selected_tests': default_tests if self.config.batch_mode else [],
+                "gui_available": gui_available,
+                "capabilities": capabilities,
+                "default_tests": default_tests,
+                "batch_mode": self.config.batch_mode,
+                "selected_tests": default_tests if self.config.batch_mode else [],
             }
 
             # In interactive mode, we would show a configuration dialog
@@ -172,10 +186,10 @@ class ConfigStep(BaseHWStep):
 
             # Build summary
             summary = {
-                'gui_available': gui_available,
-                'tests_available': sum(1 for v in capabilities.values() if v),
-                'tests_selected': len(default_tests),
-                'batch_mode': self.config.batch_mode,
+                "gui_available": gui_available,
+                "tests_available": sum(1 for v in capabilities.values() if v),
+                "tests_selected": len(default_tests),
+                "batch_mode": self.config.batch_mode,
             }
 
             # Determine status
@@ -195,7 +209,7 @@ class ConfigStep(BaseHWStep):
                 message=message,
                 details=summary,
                 errors=errors,
-                warnings=warnings
+                warnings=warnings,
             )
 
         except Exception as e:
@@ -204,5 +218,5 @@ class ConfigStep(BaseHWStep):
                 step_name=self.name,
                 status=TestStatus.ERROR,
                 message=f"Configuration failed: {str(e)}",
-                errors=[str(e)]
+                errors=[str(e)],
             )

@@ -17,10 +17,19 @@ BuildArch: noarch
 BuildRequires(pre): rpm-build-pyproject
 BuildRequires: python3(setuptools)
 BuildRequires: python3(wheel)
+BuildRequires: python3(black)
 Requires: python3 >= 3.8
 Requires: python3-module-psutil >= 5.9.0
 Requires: python3-module-py-cpuinfo >= 9.0.0
 Requires: python3-module-packaging >= 21.0
+Requires: python3-module-pexpect >= 4.8.0
+
+# Test dependencies
+%if_with check
+BuildRequires: python3(pytest)
+BuildRequires: python3(pytest-cov)
+BuildRequires: python3(pytest-mock)
+%endif_with check
 
 # System tools required for hardware detection
 Requires: dmidecode
@@ -117,19 +126,28 @@ install -d %buildroot/var/log/hw-test
 install -d %buildroot/usr/share/doc/%name-%version
 install -m 644 README.md CHANGELOG.md LICENSE %buildroot/usr/share/doc/%name-%version/
 
+%check
+%pyproject_test
+
 %post
-# Set permissions for data directories
-if [ -d /var/lib/hw-test ]; then
+# Create data directories with proper permissions if they don't exist
+if [ ! -d /var/lib/hw-test ]; then
+    mkdir -p /var/lib/hw-test
     chmod 755 /var/lib/hw-test
+fi
+
+if [ ! -d /var/lib/hw-test/logs ]; then
+    mkdir -p /var/lib/hw-test/logs
     chmod 755 /var/lib/hw-test/logs
 fi
 
-if [ -d /var/log/hw-test ]; then
+if [ ! -d /var/log/hw-test ]; then
+    mkdir -p /var/log/hw-test
     chmod 755 /var/log/hw-test
 fi
 
-# Create symlink for results
-if [ ! -e ~/HW-TEST ]; then
+# Create symlink for results in user home
+if [ ! -e ~/HW-TEST ] && [ -d /var/lib/hw-test ]; then
     ln -sf /var/lib/hw-test ~/HW-TEST 2>/dev/null ||:
 fi
 
