@@ -29,7 +29,7 @@ class ExpressTestStep(BaseHWStep):
 
     name = "Express Tests"
     description = "Quick tests for boot time, responsiveness, I/O, network, audio, and suspend"
-    requires_root = False
+    requires_root = False  # Runs as user
 
     def __init__(self, config: TestConfig, hardware_info: Optional[HardwareInfo] = None):
         super().__init__(config, hardware_info)
@@ -295,6 +295,118 @@ class ExpressTestStep(BaseHWStep):
 
         return result
 
+    def _test_wifi_adapter(self) -> Dict[str, Any]:
+        """Test Wi-Fi adapter detection and capability."""
+        result = {
+            "status": "skipped",
+            "wifi_detected": False,
+            "adapter_name": "",
+            "interface": "",
+            "driver": "",
+        }
+
+        try:
+            # Check for wireless interfaces using iw
+            stdout, stderr, rc = self._run_command(["iw", "dev"])
+            if rc == 0 and "Interface" in stdout:
+                result["wifi_detected"] = True
+                # Parse interface name
+                for line in stdout.split("\n"):
+                    if "Interface" in line:
+                        result["interface"] = line.split()[-1].strip()
+                        break
+
+            # Alternative: check with ip link
+            if not result["wifi_detected"]:
+                stdout, _, rc = self._run_command(["ip", "link", "show"])
+                if rc == 0:
+                    for line in stdout.split("\n"):
+                        if "wlan" in line.lower() or "wlx" in line.lower():
+                            result["wifi_detected"] = True
+                            result["interface"] = line.split(":")[1].strip().split("@")[0]
+                            break
+
+            # Get adapter info using lshw
+            if result["wifi_detected"]:
+                stdout, _, rc = self._run_command(["lshw", "-class", "network", "-short"])
+                if rc == 0:
+                    for line in stdout.split("\n"):
+                        if "wireless" in line.lower() or "wi-fi" in line.lower():
+                            result["adapter_name"] = line.strip()
+                            break
+
+            # Check driver
+            if result["interface"]:
+                stdout, _, rc = self._run_command(["ethtool", "-i", result["interface"]])
+                if rc == 0:
+                    for line in stdout.split("\n"):
+                        if "driver:" in line.lower():
+                            result["driver"] = line.split(":")[1].strip()
+                            break
+
+            if result["wifi_detected"]:
+                result["status"] = "passed"
+            else:
+                result["status"] = "passed"  # Not all systems have Wi-Fi
+
+        except Exception as e:
+            result["status"] = "warning"
+            result["error"] = str(e)
+
+        return result
+
+    def _test_function_keys(self) -> Dict[str, Any]:
+        """Test function keys (Fn keys) detection."""
+        result = {
+            "status": "skipped",
+            "keys_detected": [],
+            "input_devices": [],
+        }
+
+        try:
+            # Check for input devices using libinput
+            stdout, _, rc = self._run_command(["libinput", "list-devices"])
+            if rc == 0:
+                # Parse keyboard devices
+                in_keyboard = False
+                for line in stdout.split("\n"):
+                    if "Keyboard" in line:
+                        in_keyboard = True
+                        result["input_devices"].append(line.strip())
+                    elif in_keyboard and line.strip():
+                        if "Event" in line or "Device" in line:
+                            continue
+                        result["input_devices"].append(line.strip())
+
+            # Check /dev/input for event devices
+            _, _, rc = self._run_command(["ls", "/dev/input/event*"])
+            if rc == 0:
+                result["status"] = "passed"
+                result["note"] = (
+                    "Function keys require manual verification. "
+                    "Please test: brightness, volume, mute, airplane mode, "
+                    "touchpad toggle, and other Fn keys specific to this hardware."
+                )
+
+            # Check for special keys using evtest (if available)
+            _, _, rc = self._run_command(["which", "evtest"])
+            if rc == 0:
+                result["evtest_available"] = True
+                result["note"] = (
+                    "Use 'evtest' to verify function key events. "
+                    "Run: evtest /dev/input/eventX and press Fn keys."
+                )
+            else:
+                result["evtest_available"] = False
+
+            result["status"] = "passed"
+
+        except Exception as e:
+            result["status"] = "warning"
+            result["error"] = str(e)
+
+        return result
+
     def _test_suspend_resume(self) -> Dict[str, Any]:
         """Test suspend/resume capability (non-destructive check)."""
         result = {
@@ -356,6 +468,7 @@ class ExpressTestStep(BaseHWStep):
             "xorg_running": False,
             "desktop_detected": False,
             "network_available": False,
+            "video_recording": False,
         }
 
         # Check for Xorg/Wayland
@@ -375,6 +488,21 @@ class ExpressTestStep(BaseHWStep):
         stdout, _, rc = self._run_command(["ip", "route"])
         if rc == 0 and "default via" in stdout:
             result["network_available"] = True
+
+        # Check for video recording capability (required for certification)
+        video_tools = ["ffmpeg", "vokoscreen-ng", "simple-screencast"]
+        for tool in video_tools:
+            _, _, rc = self._run_command(["which", tool])
+            if rc == 0:
+                result["video_recording"] = True
+                result["video_tool"] = tool
+                break
+
+        if not result["video_recording"]:
+            result["blocked_reasons"].append(
+                "No video recording tool found (ffmpeg, vokoscreen-ng, or simple-screencast required)"
+            )
+            result["can_run"] = False
 
         # Check for required binaries (for full test)
         required_bins = ["yad", "xdg-open", "pactl", "notify-send"]
@@ -415,6 +543,8 @@ class ExpressTestStep(BaseHWStep):
             self.test_results["responsiveness"] = self._test_responsiveness()
             self.test_results["io_performance"] = self._test_io_performance()
             self.test_results["network"] = self._test_network_connectivity()
+            self.test_results["wifi"] = self._test_wifi_adapter()
+            self.test_results["function_keys"] = self._test_function_keys()
             self.test_results["memory"] = self._test_memory_basic()
             self.test_results["audio"] = self._test_audio_playback()
             self.test_results["suspend"] = self._test_suspend_resume()
@@ -437,6 +567,8 @@ class ExpressTestStep(BaseHWStep):
                 "responsiveness": self.test_results["responsiveness"],
                 "io_performance": self.test_results["io_performance"],
                 "network": self.test_results["network"],
+                "wifi": self.test_results["wifi"],
+                "function_keys": self.test_results["function_keys"],
                 "memory": self.test_results["memory"],
                 "audio": self.test_results["audio"],
                 "suspend": self.test_results["suspend"],

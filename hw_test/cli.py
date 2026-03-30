@@ -15,8 +15,15 @@ from hw_test.steps import (
     DEFAULT_STEP_ORDER,
     get_step_class,
 )
-from hw_test.auth import authenticate_root, run_as_root, is_root_authenticated, get_authenticator
+from hw_test.auth import (
+    authenticate_root,
+    run_as_root,
+    is_root_authenticated,
+    get_authenticator,
+)
 from hw_test.state import get_test_state, TestState
+from hw_test.l10n import get_l10n, _
+from hw_test.dialogs import DialogManager
 
 
 def setup_logging(verbose: bool = False, log_file: Optional[str] = None) -> logging.Logger:
@@ -106,6 +113,289 @@ def list_steps() -> None:
 
     print("\n" + "-" * 50)
     print(f"Total: {len(AVAILABLE_STEPS)} steps")
+
+
+def show_test_menu(config: TestConfig) -> List[str]:
+    """
+    Show interactive test selection menu using GUI (yad) or TUI (dialog).
+
+    Returns:
+        List of selected test steps
+    """
+    from hw_test.auth import run_as_root
+
+    l10n = get_l10n()
+    dm = DialogManager()
+
+    # Detect available capabilities
+    capabilities = {}
+
+    # Check for fwupd
+    _, _, rc = run_as_root(["which", "fwupdmgr"])
+    capabilities["fwupd"] = rc == 0
+
+    # Check for NUMA
+    stdout, _, rc = run_as_root(["lscpu", "--parse=NODE"])
+    if rc == 0:
+        nodes = set()
+        for line in stdout.split("\n"):
+            if line and not line.startswith("#"):
+                parts = line.split(",")
+                if len(parts) >= 1 and parts[0].isdigit():
+                    nodes.add(parts[0])
+        capabilities["numa"] = len(nodes) > 1
+
+    # Check for webcams
+    stdout, _, rc = run_as_root(["ls", "/dev/video*"], timeout=5)
+    capabilities["webcam"] = rc == 0 and "/dev/video" in stdout
+
+    # Check for fingerprint
+    stdout, _, rc = run_as_root(["lsusb"])
+    capabilities["fingerprint"] = rc == 0 and any(
+        kw in stdout.lower() for kw in ["fingerprint", "goodix", "validity"]
+    )
+
+    # Check for Bluetooth
+    _, _, rc = run_as_root(["which", "bluetoothctl"])
+    capabilities["bluetooth"] = rc == 0
+
+    # Check for IPMI
+    _, _, rc = run_as_root(["which", "ipmitool"])
+    capabilities["ipmi"] = rc == 0
+
+    # Check for smartcard
+    _, _, rc = run_as_root(["which", "pcsc_scan"])
+    capabilities["smartcard"] = rc == 0
+
+    # Test categories with descriptions
+    test_categories = [
+        (
+            "Базовые тесты",
+            [
+                ("hardware_detection", "Определение оборудования", True),
+                ("system_check", "Проверка системы", True),
+                ("log_collection", "Сбор логов", True),
+                ("firmware_check", "Проверка прошивок", capabilities.get("fwupd", False)),
+            ],
+        ),
+        (
+            "Тесты производительности",
+            [
+                ("performance", "Бенчмарки (CPU, память, диск)", True),
+                ("diskperf", "Тест диска", True),
+                ("glmark", "Тест графики", True),
+                ("cpupower", "Тест управления питанием CPU", True),
+            ],
+        ),
+        (
+            "Экспресс-тесты",
+            [
+                ("express_test", "Экспресс-тестирование", True),
+            ],
+        ),
+        (
+            "Специальные тесты",
+            [
+                ("syslogs", "Анализ системных логов", True),
+                ("numa_test", "NUMA топология", capabilities.get("numa", False)),
+                ("webcam_test", "Веб-камеры", capabilities.get("webcam", False)),
+                ("fingerprint_test", "Сканеры отпечатков", capabilities.get("fingerprint", False)),
+                ("bluetooth_test", "Bluetooth", capabilities.get("bluetooth", False)),
+                ("ipmi_test", "IPMI/BMC", capabilities.get("ipmi", False)),
+                ("smartcard_test", "Смарт-карты", capabilities.get("smartcard", False)),
+            ],
+        ),
+        (
+            "Обновление системы",
+            [
+                ("upgrade", "Обновление системы", True),
+                ("prepare", "Подготовка системы", True),
+            ],
+        ),
+    ]
+
+    # Build menu text
+    menu_title = "Выбор параметров тестирования"
+    menu_text = "Выберите тесты для выполнения:\n\n"
+
+    # Build checklist for GUI or menu for TUI
+    if dm.gui_available:
+        # Build yad checklist
+        yad_cmd = [
+            "yad",
+            "--form",
+            "--title",
+            menu_title,
+            "--width",
+            "600",
+            "--height",
+            "500",
+            "--button",
+            "gtk-ok:0",
+            "--button",
+            "gtk-cancel:1",
+        ]
+
+        # Add preset modes as radio buttons
+        yad_cmd.extend(
+            [
+                "--field=Полный тест:RB",
+                "TRUE",
+                "--field=Базовый тест:RB",
+                "FALSE",
+                "--field=Экспресс тест:RB",
+                "FALSE",
+                "--field=Выбрать вручную:RB",
+                "FALSE",
+            ]
+        )
+
+        # Add test checkboxes
+        for category, tests in test_categories:
+            yad_cmd.extend(["", ""])  # Separator
+            for test_id, test_name, available in tests:
+                if available:
+                    yad_cmd.extend([f"--field={test_name}:FLT", "TRUE"])
+
+        # Run yad
+        import subprocess
+
+        try:
+            result = subprocess.run(yad_cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                # Parse output
+                output = result.stdout.strip().split("|")
+                # Get selected preset
+                preset = output[0] if output else "1"
+                if "Полный" in preset:
+                    return DEFAULT_STEP_ORDER.copy()
+                elif "Базовый" in preset:
+                    return ["hardware_detection", "system_check", "log_collection"]
+                elif "Экспресс" in preset:
+                    return ["express_test", "hardware_detection", "log_collection"]
+                else:
+                    # Manual selection - parse checkboxes
+                    selected = []
+                    idx = 4  # After preset radio buttons
+                    for category, tests in test_categories:
+                        for test_id, test_name, available in tests:
+                            if available and idx < len(output):
+                                if output[idx].strip().upper() == "TRUE":
+                                    if test_id in DEFAULT_STEP_ORDER:
+                                        selected.append(test_id)
+                            idx += 1
+                    return selected if selected else DEFAULT_STEP_ORDER.copy()
+            else:
+                # Cancelled
+                return DEFAULT_STEP_ORDER.copy()
+        except Exception as e:
+            print(f"GUI dialog failed: {e}")
+            # Fallback to TUI
+            dm.tui_available = True
+
+    # TUI fallback using dialog
+    if dm.tui_available:
+        # Show preset selection first
+        preset_result = dm.run_command(
+            [
+                "dialog",
+                "--stdout",
+                "--title",
+                menu_title,
+                "--menu",
+                "Выберите режим тестирования:",
+                "20",
+                "70",
+                "4",
+                "1",
+                "Полный тест (все доступные)",
+                "2",
+                "Базовый тест (минимальный)",
+                "3",
+                "Экспресс тест",
+                "4",
+                "Выбрать вручную",
+            ]
+        )
+
+        if preset_result[0] != 0:
+            return DEFAULT_STEP_ORDER.copy()
+
+        choice = preset_result[1]
+
+        if choice == "1":
+            dm.msgbox("Выбран полный режим", menu_title)
+            return DEFAULT_STEP_ORDER.copy()
+        elif choice == "2":
+            dm.msgbox("Выбран базовый режим", menu_title)
+            return ["hardware_detection", "system_check", "log_collection"]
+        elif choice == "3":
+            dm.msgbox("Выбран экспресс режим", menu_title)
+            return ["express_test", "hardware_detection", "log_collection"]
+        elif choice == "4":
+            # Manual selection - build checklist
+            menu_items = []
+            for category, tests in test_categories:
+                for test_id, test_name, available in tests:
+                    if available and test_id in DEFAULT_STEP_ORDER:
+                        menu_items.extend([test_id, test_name, "OFF"])
+
+            if menu_items:
+                result = dm.run_command(
+                    [
+                        "dialog",
+                        "--stdout",
+                        "--title",
+                        menu_title,
+                        "--checklist",
+                        "Выберите тесты (пробел для выбора):",
+                        "25",
+                        "80",
+                        "15",
+                    ]
+                    + menu_items
+                )
+
+                if result[0] == 0 and result[1]:
+                    selected = result[1].replace('"', "").split()
+                    dm.msgbox(f"Выбрано тестов: {len(selected)}", menu_title)
+                    return selected
+
+            return DEFAULT_STEP_ORDER.copy()
+
+    # Fallback to text-based menu
+    print("\n" + "=" * 60)
+    print("МЕНЮ ВЫБОРА ПАРАМЕТРОВ ТЕСТИРОВАНИЯ")
+    print("=" * 60)
+    print()
+
+    print("Предустановленные режимы:")
+    print("  [1] Полный тест (все доступные)")
+    print("  [2] Базовый тест (минимальный)")
+    print("  [3] Экспресс тест")
+    print()
+
+    while True:
+        try:
+            choice = input("Выберите режим (1-3) [по умолчанию 1]: ").strip()
+            if not choice:
+                choice = "1"
+
+            if choice == "1":
+                print("\n✓ Выбран полный режим")
+                return DEFAULT_STEP_ORDER.copy()
+            elif choice == "2":
+                print("\n✓ Выбран базовый режим")
+                return ["hardware_detection", "system_check", "log_collection"]
+            elif choice == "3":
+                print("\n✓ Выбран экспресс режим")
+                return ["express_test", "hardware_detection", "log_collection"]
+            else:
+                print("Неверный выбор. Попробуйте снова.")
+
+        except (KeyboardInterrupt, EOFError):
+            print("\n\n✗ Выбор отменён пользователем.")
+            return DEFAULT_STEP_ORDER.copy()
 
 
 def run_tests(
@@ -362,6 +652,11 @@ def main() -> int:
             print("\n✗ Не удалось аутентифицироваться как root.")
             print("  Тестирование требует привилегий root для выполнения команд.")
             return 1
+
+        # Show test selection menu (only in interactive mode)
+        if not args.batch and not args.steps:
+            selected_steps = show_test_menu(config)
+            config.steps_to_run = selected_steps
 
     # Run tests
     return run_tests(config, logger, test_state)

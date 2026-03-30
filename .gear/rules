@@ -1,0 +1,3 @@
+tar: v@version@:.
+spec: .gear/hw-test.spec
+diff: v@version@:. . exclude=.gear

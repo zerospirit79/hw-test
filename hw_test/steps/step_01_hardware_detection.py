@@ -255,6 +255,267 @@ class HardwareDetectionStep(BaseHWStep):
 
         self.detected_hardware.fingerprint_readers = readers
 
+    def _detect_bluetooth(self) -> None:
+        """Detect Bluetooth adapters."""
+        bluetooth_adapters = []
+
+        # Check using bluetoothctl
+        stdout, _, rc = self._run_command(["bluetoothctl", "list"])
+        if rc == 0 and "Controller" in stdout:
+            for line in stdout.split("\n"):
+                if "Controller" in line:
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        bluetooth_adapters.append(
+                            {
+                                "mac": parts[1],
+                                "name": " ".join(parts[2:]),
+                            }
+                        )
+
+        # Alternative: check hciconfig
+        if not bluetooth_adapters:
+            stdout, _, rc = self._run_command(["hciconfig", "-a"])
+            if rc == 0 and "hci" in stdout:
+                bluetooth_adapters.append(
+                    {"description": "Bluetooth adapter detected via hciconfig"}
+                )
+
+        # Alternative: check lsusb
+        if not bluetooth_adapters:
+            stdout, _ = self._run_command(["lsusb"])
+            for line in stdout.split("\n"):
+                if "bluetooth" in line.lower():
+                    bluetooth_adapters.append({"description": line.strip()})
+
+        self.detected_hardware.usb_devices.extend(
+            [{"type": "bluetooth", **adapter} for adapter in bluetooth_adapters]
+        )
+
+    def _detect_smartcard_readers(self) -> None:
+        """Detect smart card readers."""
+        readers = []
+        stdout, _ = self._run_command(["pcsc_scan", "-m"], timeout=5)
+
+        if stdout:
+            for line in stdout.split("\n"):
+                if "Using" in line or "Reader" in line:
+                    readers.append({"description": line.strip()})
+
+        # Alternative: check lsusb
+        if not readers:
+            stdout, _ = self._run_command(["lsusb"])
+            for line in stdout.split("\n"):
+                if any(kw in line.lower() for kw in ["smart", "cac", "scr", "omnikey", "acr"]):
+                    readers.append({"description": line.strip()})
+
+        self.detected_hardware.usb_devices.extend(
+            [{"type": "smartcard", **reader} for reader in readers]
+        )
+
+    def _detect_numa(self) -> None:
+        """Detect NUMA topology."""
+        try:
+            stdout, _, rc = self._run_command(["numactl", "--hardware"])
+            if rc == 0:
+                for line in stdout.split("\n"):
+                    if "available:" in line.lower():
+                        match = re.search(r"(\d+)\s+nodes", line)
+                        if match:
+                            self.detected_hardware.numa_nodes = int(match.group(1))
+                    elif "node" in line.lower() and "cpus" in line.lower():
+                        # Parse CPU list for each node
+                        pass
+        except Exception as e:
+            self.logger.debug(f"NUMA detection failed: {e}")
+            self.detected_hardware.numa_nodes = 1
+
+    def _detect_ipmi(self) -> None:
+        """Detect IPMI/BMC management interface."""
+        try:
+            # Check for IPMI device
+            if os.path.exists("/dev/ipmi0") or os.path.exists("/dev/ipmi/0"):
+                self.detected_hardware.ipmi_detected = True
+
+            # Check using ipmitool
+            stdout, _, rc = self._run_command(["ipmitool", "mc", "info"], timeout=10)
+            if rc == 0 and "Manufacturer" in stdout:
+                self.detected_hardware.ipmi_detected = True
+                # Parse BMC info
+                for line in stdout.split("\n"):
+                    if "Manufacturer" in line:
+                        self.detected_hardware.system_manufacturer = line.split(":")[1].strip()
+                    elif "Product Name" in line:
+                        self.detected_hardware.system_product = line.split(":")[1].strip()
+
+            # Check for IPMI kernel modules
+            stdout, _, rc = self._run_command(["lsmod"])
+            if rc == 0 and "ipmi" in stdout:
+                self.detected_hardware.ipmi_detected = True
+
+        except Exception as e:
+            self.logger.debug(f"IPMI detection failed: {e}")
+            self.detected_hardware.ipmi_detected = False
+
+    def _collect_hardware_reports(self) -> None:
+        """
+        Collect detailed hardware reports using various system utilities.
+        Saves output files to the data directory for inclusion in test reports.
+        """
+        import os
+        from pathlib import Path
+
+        # Determine output directory
+        output_dir = Path(self.config.data_dir) / "hardware_reports"
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            # Fallback to temp directory
+            output_dir = Path("/tmp") / "hw-test" / "hardware_reports"
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.logger.info(f"Collecting hardware reports to {output_dir}")
+
+        # Helper to save command output
+        def save_output(cmd: List[str], filename: str, timeout: int = 30) -> bool:
+            try:
+                stdout, stderr, rc = self._run_command(cmd, timeout=timeout)
+                if rc == 0 or stdout:
+                    filepath = output_dir / filename
+                    with open(filepath, "w", encoding="utf-8", errors="replace") as f:
+                        f.write(stdout)
+                    self.logger.debug(f"Saved {filename}")
+                    return True
+            except Exception as e:
+                self.logger.debug(f"Failed to collect {filename}: {e}")
+            return False
+
+        # 8.2.1 inxi
+        save_output(["inxi", "-v8", "-c2"], "inxi.txt")
+
+        # 8.2.4 acpidump
+        save_output(["acpidump"], "acpi.dat", timeout=60)
+
+        # 8.2.5 lspci
+        save_output(["lspci", "-nnk"], "lspci.txt")
+
+        # 8.2.6 dmidecode
+        save_output(["dmidecode"], "dmidecode.txt", timeout=60)
+
+        # 8.2.7 lsusb
+        save_output(["lsusb"], "lsusb.txt")
+        save_output(["lsusb", "-t"], "lsusb_hierarchy.txt")
+
+        # 8.2.8 lscpu
+        save_output(["lscpu"], "lscpu.txt")
+
+        # 8.2.9 lsblk
+        save_output(["lsblk", "-ft"], "lsblk.txt")
+
+        # 8.2.10 lsscsi
+        save_output(["lsscsi", "-v"], "lsscsi.txt")
+
+        # 8.2.11 smartctl for each disk
+        disks = self.detected_hardware.disk_info
+        for disk in disks:
+            device = disk.get("device", "")
+            if device:
+                # Extract disk name (e.g., /dev/sda -> sda)
+                disk_name = device.split("/")[-1]
+                save_output(["smartctl", "-a", device], f"smartctl_{disk_name}.txt", timeout=60)
+
+        # 8.2.12 rfkill
+        save_output(["rfkill", "--output-all"], "rfkill.txt")
+
+        # 8.2.13 uname
+        save_output(["uname", "-a"], "uname.txt")
+
+        # 8.2.14 xrandr (only if X is running)
+        display = os.environ.get("DISPLAY")
+        if display:
+            save_output(["xrandr"], "xrandr.txt")
+
+        # 8.2.15 E2K cache (only on Elbrus)
+        stdout, _, rc = self._run_command(["uname", "-m"])
+        if rc == 0 and "e2k" in stdout.lower():
+            save_output(["sh", "-c", "grep cache /proc/bootdata"], "e2k_cache.txt")
+
+        # Additional useful reports
+        save_output(["hostnamectl"], "hostnamectl.txt")
+        save_output(["uptime"], "uptime.txt")
+        save_output(["cat", "/proc/version"], "proc_version.txt")
+        save_output(["cat", "/proc/meminfo"], "proc_meminfo.txt")
+        save_output(["cat", "/proc/cpuinfo"], "proc_cpuinfo.txt")
+        save_output(["free", "-h"], "free.txt")
+        save_output(["df", "-h"], "df.txt")
+        save_output(["mount"], "mount.txt")
+        save_output(["ps", "auxf"], "ps.txt", timeout=10)
+        save_output(["systemctl", "list-units", "--type=service"], "services.txt")
+        save_output(["dmesg"], "dmesg.txt", timeout=30)
+
+        self.logger.info(f"Hardware reports collection completed. Files saved to {output_dir}")
+
+    def _collect_spec_verification(self) -> None:
+        """
+        Collect hardware verification data for comparison with specifications (section 8.3).
+        Saves output files for inclusion in test protocol.
+        """
+        import os
+        from pathlib import Path
+
+        output_dir = Path(self.config.data_dir) / "spec_verification"
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            output_dir = Path("/tmp") / "hw-test" / "spec_verification"
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.logger.info(f"Collecting spec verification data to {output_dir}")
+
+        def save_output(cmd: List[str], filename: str, timeout: int = 30) -> bool:
+            try:
+                stdout, stderr, rc = self._run_command(cmd, timeout=timeout)
+                if rc == 0 or stdout:
+                    filepath = output_dir / filename
+                    with open(filepath, "w", encoding="utf-8", errors="replace") as f:
+                        f.write(stdout)
+                    self.logger.debug(f"Saved {filename}")
+                    return True
+            except Exception as e:
+                self.logger.debug(f"Failed to collect {filename}: {e}")
+            return False
+
+        # 8.3.1 CPU and motherboard
+        save_output(["inxi", "-CM"], "cpu_motherboard.txt")
+
+        # 8.3.2 Memory
+        save_output(["inxi", "-m"], "memory.txt")
+        save_output(["dmidecode", "--type", "19"], "memory_dmidecode.txt", timeout=60)
+
+        # 8.3.3 Disk subsystem
+        save_output(["inxi", "-D"], "disks.txt")
+
+        # 8.3.4 Graphics
+        save_output(["inxi", "-G"], "graphics.txt")
+
+        # 8.3.5 3D acceleration (from user session)
+        display = os.environ.get("DISPLAY")
+        if display:
+            save_output(["glxinfo"], "3d_acceleration.txt")
+
+        # 8.3.6 CD/DVD/Blu-ray drive info
+        if os.path.exists("/proc/sys/dev/cdrom/info"):
+            save_output(["cat", "/proc/sys/dev/cdrom/info"], "cdrom_info.txt")
+
+        # Additional verification data
+        save_output(["lscpu"], "lscpu_full.txt")
+        save_output(["free", "-h"], "memory_free.txt")
+        save_output(["lsblk", "-o", "NAME,SIZE,TYPE,MOUNTPOINT"], "block_devices.txt")
+
+        self.logger.info(
+            f"Spec verification data collection completed. Files saved to {output_dir}"
+        )
+
     def execute(self) -> StepResult:
         """Execute hardware detection."""
         errors = []
@@ -273,6 +534,12 @@ class HardwareDetectionStep(BaseHWStep):
             self._detect_system_info()
             self._detect_webcams()
             self._detect_fingerprint_readers()
+            self._detect_bluetooth()
+            self._detect_smartcard_readers()
+            self._detect_numa()
+            self._detect_ipmi()
+            self._collect_hardware_reports()
+            self._collect_spec_verification()
 
             # Update hardware info for subsequent steps
             self.hardware_info = self.detected_hardware

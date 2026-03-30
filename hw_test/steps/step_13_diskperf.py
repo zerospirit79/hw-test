@@ -24,7 +24,7 @@ class DiskPerfStep(BaseHWStep):
 
     name = "Disk Performance Test"
     description = "Measure disk drive performance using fio or dd"
-    requires_root = True
+    requires_root = False  # Can run as user or root (uses dd as fallback)
 
     def __init__(self, config: TestConfig, hardware_info: Optional[HardwareInfo] = None):
         super().__init__(config, hardware_info)

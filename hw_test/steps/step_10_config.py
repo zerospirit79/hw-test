@@ -21,7 +21,7 @@ class ConfigStep(BaseHWStep):
 
     name = "Configuration"
     description = "Define test plan and configuration options"
-    requires_root = False
+    requires_root = False  # Can run as user or root
 
     def __init__(self, config: TestConfig, hardware_info: Optional[HardwareInfo] = None):
         super().__init__(config, hardware_info)

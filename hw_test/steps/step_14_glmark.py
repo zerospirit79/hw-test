@@ -23,7 +23,7 @@ class GlmarkStep(BaseHWStep):
 
     name = "Graphics Test"
     description = "Test 3D graphics performance using glmark2"
-    requires_root = False
+    requires_root = False  # Can run as user or root
 
     def __init__(self, config: TestConfig, hardware_info: Optional[HardwareInfo] = None):
         super().__init__(config, hardware_info)

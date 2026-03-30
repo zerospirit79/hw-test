@@ -61,23 +61,32 @@ AVAILABLE_STEPS = {
     "finalize": FinalizeStep,
 }
 
-# Default step execution order (matches pc-test bash order)
+# Default step execution order (matches pc-test methodology order)
+# Order:
+# 1. Prepare - detect distro/architecture (p10, p11, c10f2, etc.)
+# 2. Upgrade - add repository, apt-get update, apt-get dist-upgrade, update-kernel
+# 3. Reboot and continue
+# 4. System logs check (section 7)
+# 5. Hardware detection (section 8.2, 8.3)
+# 6. Component tests (section 10)
+# 7. Log collection
+# 8. Finalize
 DEFAULT_STEP_ORDER = [
-    "prepare",
-    "upgrade",
-    "hardware_detection",
-    "config",
-    "firmware_check",
-    "syslogs",
-    "express_test",
-    "cpupower",
-    "diskperf",
-    "glmark",
-    "system_check",
-    "performance",
-    "reboot_and_continue",
-    "log_collection",
-    "finalize",
+    "prepare",  # Detect distro, architecture
+    "upgrade",  # Add repo, apt-get update, dist-upgrade, update-kernel
+    "reboot_and_continue",  # Reboot after upgrade
+    "syslogs",  # Section 7: Check and save logs
+    "hardware_detection",  # Section 8.2, 8.3: Hardware info and spec verification
+    "config",  # Test configuration
+    "firmware_check",  # Firmware updates
+    "express_test",  # Section 10: Express tests
+    "cpupower",  # Section 10.1, 10.6: CPU power and ACPI
+    "diskperf",  # Section 10: Disk performance
+    "glmark",  # Section 10.3: Graphics
+    "performance",  # Section 10: Benchmarks
+    "system_check",  # Section 10: System checks
+    "log_collection",  # Collect all logs
+    "finalize",  # Create archive
 ]
 
 

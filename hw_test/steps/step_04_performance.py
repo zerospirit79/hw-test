@@ -6,6 +6,7 @@ import time
 import subprocess
 import os
 import tempfile
+import re
 from typing import List, Dict, Any, Optional, Tuple
 import multiprocessing
 
@@ -14,15 +15,20 @@ from hw_test.steps.base import BaseHWStep
 
 
 class PerformanceStep(BaseHWStep):
-    """Run performance benchmarks for CPU, memory, disk, and context switching."""
+    """
+    Run performance benchmarks for CPU, memory, disk, and context switching.
+
+    Includes section 10.1 CPU stress test with cpupower frequency monitoring.
+    """
 
     name = "Performance Benchmarks"
     description = "Measure CPU, memory, disk I/O, and context switching performance"
-    required_privileges = False
+    requires_root = False  # Can run as user or root
 
     def __init__(self, config: TestConfig, hardware_info: Optional[HardwareInfo] = None):
         super().__init__(config, hardware_info)
         self.benchmark_results: Dict[str, Any] = {}
+        self.cpu_stress_result: Dict[str, Any] = {}
 
     def _run_command(self, cmd: List[str], timeout: int = 60) -> Tuple[str, str, int]:
         """Run a command and return (stdout, stderr, returncode)."""
@@ -100,6 +106,131 @@ class PerformanceStep(BaseHWStep):
             result["error"] = str(e)
 
         return result
+
+    def _cpu_stress_test(self) -> Dict[str, Any]:
+        """
+        Section 10.1: CPU stress test with frequency monitoring.
+
+        Tests CPU stability under maximum load using stress-ng.
+        Monitors CPU frequencies before and during load using cpupower.
+        """
+        result = {
+            "status": "skipped",
+            "stress_ng_available": False,
+            "cpupower_available": False,
+            "cpu_count": 0,
+            "freq_before": [],
+            "freq_during": [],
+            "dmesg_errors": [],
+            "stress_output": "",
+        }
+
+        try:
+            # Check if stress-ng is available
+            _, _, rc = self._run_command(["which", "stress-ng"])
+            if rc != 0:
+                result["status"] = "skipped"
+                result["note"] = "stress-ng not installed"
+                return result
+            result["stress_ng_available"] = True
+
+            # Check if cpupower is available
+            _, _, rc = self._run_command(["which", "cpupower"])
+            if rc != 0:
+                result["note"] = "cpupower not available, using /sys fallback"
+            else:
+                result["cpupower_available"] = True
+
+            # Get CPU count
+            stdout, _, rc = self._run_command(["nproc", "--all"])
+            if rc == 0 and stdout.strip().isdigit():
+                result["cpu_count"] = int(stdout.strip())
+            else:
+                result["cpu_count"] = multiprocessing.cpu_count()
+
+            # Get initial frequencies (10.1)
+            if result["cpupower_available"]:
+                stdout, _, rc = self._run_command(["cpupower", "monitor"])
+                if rc == 0:
+                    result["freq_before"] = self._parse_cpupower_output(stdout)
+            else:
+                # Fallback to /sys
+                result["freq_before"] = self._read_cpu_frequencies()
+
+            # Run stress test for 60 seconds (10.1)
+            cpu_count = result["cpu_count"]
+            self.logger.info(f"Starting CPU stress test with {cpu_count} threads...")
+
+            stdout, stderr, rc = self._run_command(
+                [
+                    "stress-ng",
+                    "--cpu",
+                    str(cpu_count),
+                    "--cpu-method",
+                    "matrixprod",
+                    "--metrics",
+                    "--timeout",
+                    "60",
+                ],
+                timeout=90,
+            )
+            result["stress_output"] = stdout[:500] if stdout else ""
+
+            # Get frequencies during load
+            if result["cpupower_available"]:
+                stdout, _, rc = self._run_command(["cpupower", "monitor"])
+                if rc == 0:
+                    result["freq_during"] = self._parse_cpupower_output(stdout)
+            else:
+                result["freq_during"] = self._read_cpu_frequencies()
+
+            # Check dmesg for new errors
+            stdout, _, rc = self._run_command(["dmesg", "-T", "--level=err,warn"])
+            if rc == 0 and stdout:
+                result["dmesg_errors"] = stdout.split("\n")[-20:]  # Last 20 errors
+
+            # Determine status
+            if rc == 0 and not result["dmesg_errors"]:
+                result["status"] = "passed"
+            elif result["dmesg_errors"]:
+                result["status"] = "warning"
+                result["note"] = "dmesg contains errors/warnings after stress test"
+            else:
+                result["status"] = "warning"
+                result["note"] = "stress-ng completed with warnings"
+
+        except Exception as e:
+            result["status"] = "failed"
+            result["error"] = str(e)
+
+        return result
+
+    def _parse_cpupower_output(self, output: str) -> List[Dict[str, Any]]:
+        """Parse cpupower monitor output."""
+        frequencies = []
+        for line in output.split("\n"):
+            # Parse lines like: "cpu0: 800.00 MHz"
+            match = re.search(r"cpu(\d+):\s+([\d.]+)\s+MHz", line)
+            if match:
+                frequencies.append({"cpu": int(match.group(1)), "freq_mhz": float(match.group(2))})
+        return frequencies
+
+    def _read_cpu_frequencies(self) -> List[Dict[str, Any]]:
+        """Read CPU frequencies from /sys (fallback for cpupower)."""
+        frequencies = []
+        import glob
+
+        cpu_dirs = glob.glob("/sys/devices/system/cpu/cpu[0-9]*")
+        for cpu_dir in sorted(cpu_dirs):
+            cpu_num = int(cpu_dir.split("cpu")[1])
+            try:
+                freq_file = f"{cpu_dir}/cpufreq/scaling_cur_freq"
+                with open(freq_file, "r") as f:
+                    freq_khz = int(f.read().strip())
+                    frequencies.append({"cpu": cpu_num, "freq_mhz": freq_khz / 1000.0})
+            except (FileNotFoundError, PermissionError, ValueError):
+                continue
+        return frequencies
 
     def _benchmark_memory(self) -> Dict[str, Any]:
         """Memory bandwidth benchmark."""
@@ -267,7 +398,7 @@ class PerformanceStep(BaseHWStep):
         return result
 
     def execute(self) -> StepResult:
-        """Execute performance benchmarks."""
+        """Execute performance benchmarks including section 10.1 CPU stress test."""
         errors = []
         warnings = []
 
@@ -280,6 +411,9 @@ class PerformanceStep(BaseHWStep):
             self.benchmark_results["disk"] = self._benchmark_disk()
             self.benchmark_results["context_switch"] = self._benchmark_context_switch()
 
+            # Section 10.1: CPU stress test
+            self.cpu_stress_result = self._cpu_stress_test()
+
             # Aggregate results
             failed_benchmarks = []
             warning_benchmarks = []
@@ -290,12 +424,19 @@ class PerformanceStep(BaseHWStep):
                 elif bench_result.get("status") == "warning":
                     warning_benchmarks.append(bench_name)
 
+            # Check CPU stress test result
+            if self.cpu_stress_result.get("status") == "failed":
+                failed_benchmarks.append("cpu_stress")
+            elif self.cpu_stress_result.get("status") == "warning":
+                warning_benchmarks.append("cpu_stress")
+
             # Build summary
             summary = {
                 "cpu": self.benchmark_results["cpu"],
                 "memory": self.benchmark_results["memory"],
                 "disk": self.benchmark_results["disk"],
                 "context_switch": self.benchmark_results["context_switch"],
+                "cpu_stress": self.cpu_stress_result,
             }
 
             # Determine overall status

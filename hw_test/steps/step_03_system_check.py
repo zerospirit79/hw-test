@@ -17,7 +17,7 @@ class SystemCheckStep(BaseHWStep):
 
     name = "System Check"
     description = "Verify OS version, package manager health, available updates, and disk space"
-    requires_root = True
+    requires_root = False  # Can run as user or root
 
     def __init__(self, config: TestConfig, hardware_info: Optional[HardwareInfo] = None):
         super().__init__(config, hardware_info)

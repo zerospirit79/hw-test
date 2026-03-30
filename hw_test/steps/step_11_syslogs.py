@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import gzip
 import subprocess
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
@@ -16,11 +17,11 @@ class SyslogsStep(BaseHWStep):
     """
     Checking and saving system logs.
 
-    Collects:
-    - dmesg output and errors
-    - Failed systemd services
-    - Journal errors
-    - System log analysis
+    Collects (according to methodology section 7):
+    - AER error check and kernel parameters recommendation
+    - dmesg output and errors (7.2)
+    - Failed systemd services (7.3)
+    - Journal logs (7.4)
     """
 
     name = "System Logs Check"
@@ -31,6 +32,7 @@ class SyslogsStep(BaseHWStep):
         super().__init__(config, hardware_info)
         self.logs_dir: Optional[Path] = None
         self.errors_found: List[str] = []
+        self.kernel_params_recommendation: List[str] = []
 
     def _run_command(
         self, cmd: List[str], timeout: int = 60, use_root: bool = True
@@ -58,8 +60,56 @@ class SyslogsStep(BaseHWStep):
             self.logger.warning(f"Failed to save {filename}: {e}")
             return ""
 
+    def _check_aer_errors(self) -> Dict[str, Any]:
+        """
+        Check for AER errors in dmesg (section 7.1).
+
+        Returns dict with:
+        - aer_count: number of AER errors
+        - needs_kernel_params: True if > 9 errors
+        - recommended_params: list of kernel parameters to try
+        """
+        result = {
+            "aer_count": 0,
+            "needs_kernel_params": False,
+            "recommended_params": [],
+        }
+
+        try:
+            # Count AER errors
+            stdout, _, rc = self._run_command(
+                ["dmesg", "|", "grep", "-c", "'AER: Multiple Corrected error received'"],
+                timeout=30,
+            )
+            # Alternative: parse dmesg directly
+            stdout, _, rc = self._run_command(["dmesg"], timeout=30)
+            if rc == 0:
+                aer_pattern = r"AER:.*\(Corrected error message|Multiple Corrected error\)"
+                matches = re.findall(aer_pattern, stdout, re.IGNORECASE)
+                result["aer_count"] = len(matches)
+
+                if result["aer_count"] > 9:
+                    result["needs_kernel_params"] = True
+                    result["recommended_params"] = [
+                        "pcie_aspm=off",  # Disable PCIE power saving
+                        "pci=nomsi",  # Disable MSI interrupts
+                        "pci=noaer",  # Disable PCIE extended error reporting
+                    ]
+                    self.kernel_params_recommendation = result["recommended_params"]
+
+        except Exception as e:
+            self.logger.debug(f"AER check failed: {e}")
+
+        return result
+
     def _check_dmesg(self) -> Dict[str, Any]:
-        """Check dmesg for errors."""
+        """
+        Check dmesg for errors (section 7.2).
+
+        Saves:
+        - dmesg.gz (full kernel log)
+        - dmesg_err.gz (errors only)
+        """
         result = {
             "dmesg_saved": False,
             "dmesg_errors_saved": False,
@@ -70,37 +120,34 @@ class SyslogsStep(BaseHWStep):
         }
 
         try:
-            # Get full dmesg
-            stdout, _, rc = self._run_command(["dmesg", "-H", "-P", "--color=always"])
+            # Get full dmesg (7.2)
+            stdout, _, rc = self._run_command(["dmesg"], timeout=60)
             if rc == 0 and stdout:
                 self._save_file("dmesg.txt", stdout, compress=True)
                 result["dmesg_saved"] = True
 
-            # Get dmesg errors
-            filter_pattern = r"(panic|fatal|fail|error|warning)"
-            stdout, _, rc = self._run_command(["dmesg"])
-            if rc == 0:
+            # Get dmesg errors (7.2)
+            if stdout:
                 errors = []
                 for line in stdout.split("\n"):
                     if "Command line:" in line or "Kernel command line:" in line:
                         continue
+                    line_lower = line.lower()
                     if any(
-                        kw in line.lower() for kw in ["panic", "fatal", "fail", "error", "warning"]
+                        kw in line_lower for kw in ["panic", "fatal", "fail", "error", "warning"]
                     ):
                         errors.append(line)
-                        if "panic" in line.lower():
+                        if "panic" in line_lower:
                             result["panic_count"] += 1
-                        elif "fatal" in line.lower():
+                        elif "fatal" in line_lower:
                             result["fatal_count"] += 1
-                        elif "fail" in line.lower():
+                        elif "fail" in line_lower or "error" in line_lower:
                             result["error_count"] += 1
-                        elif "error" in line.lower():
-                            result["error_count"] += 1
-                        elif "warning" in line.lower():
+                        elif "warning" in line_lower:
                             result["warning_count"] += 1
 
                 if errors:
-                    self._save_file("dmesg_errors.txt", "\n".join(errors), compress=True)
+                    self._save_file("dmesg_err.txt", "\n".join(errors), compress=True)
                     result["dmesg_errors_saved"] = True
                     self.errors_found.extend(errors[:10])  # First 10 errors
 
@@ -198,7 +245,7 @@ class SyslogsStep(BaseHWStep):
         return result
 
     def execute(self) -> StepResult:
-        """Execute system logs check."""
+        """Execute system logs check (section 7)."""
         errors = []
         warnings = []
 
@@ -209,23 +256,37 @@ class SyslogsStep(BaseHWStep):
             self.logs_dir = Path(self.config.data_dir) / "logs"
             self.logs_dir.mkdir(parents=True, exist_ok=True)
 
-            # Check dmesg
+            # 7.1 Check AER errors
+            aer_result = self._check_aer_errors()
+
+            # 7.2 Check dmesg
             dmesg_result = self._check_dmesg()
 
-            # Check systemd
+            # 7.3 Check systemd (failed services)
             systemd_result = self._check_systemd()
+
+            # 7.4 Check journal logs
+            # (included in _check_systemd)
 
             # Check legacy logs
             legacy_result = self._check_legacy_logs()
 
             # Build summary
             summary = {
+                "aer": aer_result,
                 "dmesg": dmesg_result,
                 "systemd": systemd_result,
                 "legacy_logs": legacy_result,
                 "total_errors": len(self.errors_found),
                 "logs_dir": str(self.logs_dir),
             }
+
+            # Add AER recommendation to warnings
+            if aer_result.get("needs_kernel_params"):
+                warnings.append(
+                    f"AER errors detected: {aer_result['aer_count']} > 9. "
+                    f"Recommended kernel parameters: {', '.join(aer_result['recommended_params'])}"
+                )
 
             # Determine status
             critical_errors = dmesg_result.get("panic_count", 0) + dmesg_result.get(
@@ -235,7 +296,7 @@ class SyslogsStep(BaseHWStep):
                 status = TestStatus.FAILED
                 message = f"Critical errors found: {critical_errors} panic/fatal"
                 errors.append(f"Found {critical_errors} critical kernel messages")
-            elif self.errors_found:
+            elif self.errors_found or aer_result.get("needs_kernel_params"):
                 status = TestStatus.WARNING
                 message = f"Logs check completed with {len(self.errors_found)} warnings/errors"
                 warnings.extend(self.errors_found[:5])  # First 5

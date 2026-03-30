@@ -12,7 +12,7 @@ from hw_test.steps.base import BaseHWStep
 
 class CpuPowerStep(BaseHWStep):
     """
-    Checking CPU frequency modes.
+    Checking CPU frequency modes and ACPI power management.
 
     Tests:
     - CPU frequency scaling support
@@ -20,6 +20,7 @@ class CpuPowerStep(BaseHWStep):
     - Energy performance bias
     - Turbo boost status
     - Frequency changes under load
+    - ACPI suspend/hibernate support (section 10.6)
     """
 
     name = "CPU Power Test"
@@ -29,6 +30,7 @@ class CpuPowerStep(BaseHWStep):
     def __init__(self, config: TestConfig, hardware_info: Optional[HardwareInfo] = None):
         super().__init__(config, hardware_info)
         self.cpu_info: Dict[str, Any] = {}
+        self.acpi_result: Dict[str, Any] = {}
 
     def _run_command(
         self, cmd: List[str], timeout: int = 60, use_root: bool = True
@@ -220,6 +222,113 @@ class CpuPowerStep(BaseHWStep):
 
         return result
 
+    def _check_acpi_power_management(self) -> Dict[str, Any]:
+        """
+        Section 10.6: Check ACPI power management support.
+
+        Tests:
+        - Suspend (S3) support
+        - Hibernate (S4) support
+        - Swap size for hibernate
+        - Power button support
+        """
+        result = {
+            "status": "passed",
+            "suspend_supported": False,
+            "hibernate_supported": False,
+            "swap_available": False,
+            "swap_size_gb": 0,
+            "ram_size_gb": 0,
+            "swap_sufficient_for_hibernate": False,
+            "power_button_supported": False,
+            "lid_switch_supported": False,
+        }
+
+        try:
+            # Check available sleep states (10.6.1.3, 10.6.1.4)
+            if os.path.exists("/sys/power/state"):
+                with open("/sys/power/state", "r") as f:
+                    states = f.read().strip().split()
+                result["suspend_supported"] = "mem" in states or "freeze" in states
+                result["hibernate_supported"] = "disk" in states
+
+            # Check swap size (10.6.1.3, 10.6.2.3)
+            stdout, _, rc = self._run_command(["swapon", "--show", "--bytes"])
+            if rc == 0 and stdout.strip():
+                result["swap_available"] = True
+                # Parse swap size
+                total_swap = 0
+                for line in stdout.split("\n"):
+                    if line.strip():
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                total_swap += int(parts[1])  # SIZE in bytes
+                            except ValueError:
+                                continue
+                result["swap_size_gb"] = round(total_swap / (1024**3), 2)
+
+            # Get RAM size (10.6.1.3, 10.6.2.3)
+            stdout, _, rc = self._run_command(["dmidecode", "--type", "19", "-t", "memory"])
+            if rc == 0 and stdout:
+                # Parse total memory
+                for line in stdout.split("\n"):
+                    if "Total Width:" in line or "Size:" in line:
+                        match = re.search(r"(\d+)\s*(GB|MB)", line, re.IGNORECASE)
+                        if match:
+                            size = int(match.group(1))
+                            unit = match.group(2).upper()
+                            if unit == "MB":
+                                size /= 1024
+                            result["ram_size_gb"] = max(result["ram_size_gb"], size)
+
+            # Alternative: use free command
+            if result["ram_size_gb"] == 0:
+                stdout, _, rc = self._run_command(["free", "-g"])
+                if rc == 0:
+                    for line in stdout.split("\n"):
+                        if line.startswith("Mem:"):
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                result["ram_size_gb"] = int(parts[1])
+                                break
+
+            # Check if swap is sufficient for hibernate
+            result["swap_sufficient_for_hibernate"] = (
+                result["swap_size_gb"] >= result["ram_size_gb"]
+            )
+
+            # Check power button support
+            if os.path.exists("/proc/acpi/button"):
+                result["power_button_supported"] = True
+                if os.path.exists("/proc/acpi/button/lid"):
+                    result["lid_switch_supported"] = True
+
+            # Check systemd sleep support
+            stdout, _, rc = self._run_command(["systemctl", "list-units", "--type=sleep", "--all"])
+            if rc == 0:
+                if "suspend" not in stdout.lower():
+                    result["suspend_supported"] = False
+                if "hibernate" not in stdout.lower():
+                    result["hibernate_supported"] = False
+
+            # Determine status
+            if not result["suspend_supported"]:
+                result["status"] = "warning"
+                result["note"] = "Suspend mode not supported"
+            elif result["hibernate_supported"] and not result["swap_sufficient_for_hibernate"]:
+                result["status"] = "warning"
+                result["note"] = (
+                    f"Hibernate supported but swap ({result['swap_size_gb']} GB) "
+                    f"is less than RAM ({result['ram_size_gb']} GB)"
+                )
+
+        except Exception as e:
+            result["status"] = "warning"
+            result["error"] = str(e)
+
+        return result
+
     def _run_cpupower_info(self) -> str:
         """Run cpupower frequency-info command."""
         stdout, _, rc = self._run_command(["cpupower", "frequency-info"])
@@ -228,7 +337,7 @@ class CpuPowerStep(BaseHWStep):
         return ""
 
     def execute(self) -> StepResult:
-        """Execute CPU power test."""
+        """Execute CPU power test including ACPI power management (section 10.6)."""
         errors = []
         warnings = []
 
@@ -247,6 +356,9 @@ class CpuPowerStep(BaseHWStep):
             # Check for energy bias support
             energy_bias = self._get_energy_bias()
 
+            # Section 10.6: ACPI power management
+            self.acpi_result = self._check_acpi_power_management()
+
             # Build summary
             summary = {
                 "scaling_supported": scaling_info["supported"],
@@ -259,6 +371,7 @@ class CpuPowerStep(BaseHWStep):
                 "frequency_change_test": freq_test["success"],
                 "energy_bias": energy_bias,
                 "cpupower_output": cpupower_output[:500] if cpupower_output else "",
+                "acpi": self.acpi_result,
             }
 
             self.cpu_info = summary
@@ -273,6 +386,10 @@ class CpuPowerStep(BaseHWStep):
                     status = TestStatus.WARNING
                     message = "CPU frequency scaling not supported or limited"
                     warnings.append("Frequency scaling not available")
+            elif self.acpi_result.get("status") == "warning":
+                status = TestStatus.WARNING
+                message = "CPU power test completed with warnings"
+                warnings.append(self.acpi_result.get("note", ""))
             elif errors:
                 status = TestStatus.FAILED
                 message = "CPU power test failed"
