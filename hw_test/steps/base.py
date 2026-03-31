@@ -1,12 +1,18 @@
 """Base class for hardware test steps."""
 
 import logging
+import os
 import time
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Tuple
 
 from hw_test.types import StepResult, TestStatus, HardwareInfo, TestConfig
 from hw_test.auth import run_as_root, is_root_authenticated
+from hw_test.system_utils import (
+    CommandLogger,
+    is_pkg_installed,
+    has_binary,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -27,6 +33,14 @@ class BaseHWStep(ABC):
     requires_root: bool = False
     required_privileges: bool = False  # Alias for requires_root (for CLI compatibility)
     timeout_seconds: int = 300
+
+    # Pre-check: conditions for test to be allowed/blocked
+    # Override in subclasses to add custom pre-checks
+    required_packages: List[str] = []
+    required_binaries: List[str] = []
+    required_desktop: Optional[str] = None
+    requires_xorg: bool = False
+    requires_systemd: bool = False
 
     def __init__(self, config: TestConfig, hardware_info: Optional[HardwareInfo] = None):
         """
@@ -53,6 +67,76 @@ class BaseHWStep(ABC):
     def teardown(self) -> None:
         """Cleanup hook called after execute(), even if it failed."""
         self.logger.debug(f"Tearing down step: {self.name}")
+
+    def pre(self) -> Tuple[bool, Optional[str]]:
+        """
+        Pre-check hook called before setup().
+        Override in subclasses to add custom pre-checks.
+
+        Returns:
+            Tuple of (allowed: bool, reason: Optional[str])
+            - If allowed is False, test will be blocked/skipped with reason
+        """
+        # Check required packages
+        for pkg in self.required_packages:
+            if not is_pkg_installed(pkg):
+                return False, f"Required package '{pkg}' is not installed"
+
+        # Check required binaries
+        for binary in self.required_binaries:
+            if not has_binary(binary):
+                return False, f"Required binary '{binary}' not found"
+
+        # Check desktop environment
+        if self.required_desktop:
+            from hw_test.system_utils import get_current_desktop
+
+            current = get_current_desktop()
+            if current != self.required_desktop:
+                return (
+                    False,
+                    f"Requires {self.required_desktop} desktop (current: {current or 'none'})",
+                )
+
+        # Check Xorg
+        if self.requires_xorg:
+            if not is_pkg_installed("xorg-server") and not has_binary("Xorg"):
+                return False, "Xorg server is required but not found"
+
+        # Check systemd
+        if self.requires_systemd:
+            if not os.path.exists("/run/systemd/system"):
+                return False, "systemd is required but not running"
+
+        return True, None
+
+    def is_allowed(self) -> Tuple[bool, Optional[str]]:
+        """
+        Check if test is allowed to run (not blocked).
+        Combines pre() check with root authentication.
+
+        Returns:
+            Tuple of (allowed: bool, reason: Optional[str])
+        """
+        allowed, reason = self.pre()
+        if not allowed:
+            return False, reason
+
+        if self.requires_root and not is_root_authenticated():
+            return False, "Root authentication required"
+
+        return True, None
+
+    def is_blocked(self) -> Tuple[bool, Optional[str]]:
+        """
+        Check if test is blocked (can be retried later).
+        Override in subclasses for custom block conditions.
+
+        Returns:
+            Tuple of (blocked: bool, reason: Optional[str])
+        """
+        # Default: not blocked
+        return False, None
 
     @abstractmethod
     def execute(self) -> StepResult:
@@ -97,12 +181,34 @@ class BaseHWStep(ABC):
 
     def run(self) -> StepResult:
         """
-        Run the complete step lifecycle: setup -> execute -> teardown.
+        Run the complete step lifecycle: pre -> setup -> execute -> teardown.
 
         Returns:
-            StepResult from execute() or error result if setup/teardown fails
+            StepResult from execute() or error/blocked/skipped result
         """
         start_time = time.time()
+
+        # Pre-check phase
+        allowed, reason = self.is_allowed()
+        if not allowed:
+            # Check if blocked (can retry) or should skip
+            blocked, block_reason = self.is_blocked()
+            if blocked:
+                self.logger.info(f"Step {self.name} is blocked: {block_reason or reason}")
+                return StepResult(
+                    step_name=self.name,
+                    status=TestStatus.WARNING,  # Blocked, not failed
+                    message=f"Test blocked: {reason}",
+                    details={"blocked": True, "reason": reason},
+                )
+            else:
+                self.logger.info(f"Step {self.name} skipped: {reason}")
+                return StepResult(
+                    step_name=self.name,
+                    status=TestStatus.SKIPPED,
+                    message=f"Test skipped: {reason}",
+                    details={"skipped": True, "reason": reason},
+                )
 
         # Setup phase
         if not self.setup():

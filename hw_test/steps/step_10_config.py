@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from hw_test.types import StepResult, TestStatus, HardwareInfo, TestConfig
 from hw_test.steps.base import BaseHWStep
+from hw_test.test_selector_gui import show_test_selector
 
 
 class ConfigStep(BaseHWStep):
@@ -169,26 +170,42 @@ class ConfigStep(BaseHWStep):
             # Get default test selection
             default_tests = self._get_default_tests(capabilities)
 
+            # Show GUI test selector if available
+            selected_tests = default_tests
+            if gui_available and not self.config.batch_mode:
+                try:
+                    gui_result = show_test_selector(
+                        hardware_info=self.hardware_info,
+                        selected_tests=default_tests,
+                    )
+                    if gui_result:
+                        selected_tests = gui_result
+                        self.logger.info(f"User selected tests: {selected_tests}")
+                    else:
+                        self.logger.info("Test selection cancelled, using defaults")
+                except Exception as e:
+                    self.logger.warning(f"GUI test selector failed: {e}, using defaults")
+                    warnings.append(f"GUI selector failed: {e}")
+
             # Build configuration
             self.config_options = {
                 "gui_available": gui_available,
                 "capabilities": capabilities,
                 "default_tests": default_tests,
                 "batch_mode": self.config.batch_mode,
-                "selected_tests": default_tests if self.config.batch_mode else [],
+                "selected_tests": selected_tests,
             }
 
-            # In interactive mode, we would show a configuration dialog
-            # For now, just log the configuration
+            # Log the configuration
             self.logger.info(f"GUI available: {gui_available}")
             self.logger.info(f"Capabilities: {capabilities}")
-            self.logger.info(f"Default tests: {default_tests}")
+            self.logger.info(f"Selected tests: {selected_tests}")
 
             # Build summary
             summary = {
                 "gui_available": gui_available,
                 "tests_available": sum(1 for v in capabilities.values() if v),
-                "tests_selected": len(default_tests),
+                "tests_selected": len(selected_tests),
                 "batch_mode": self.config.batch_mode,
             }
 

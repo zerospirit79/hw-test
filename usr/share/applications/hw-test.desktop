@@ -1,8 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=HW Test Suite
-Comment=Test utility
+Comment=Hardware compatibility testing tool
 Icon=utilities-system-monitor
-Exec=/usr/bin/hw-test
+Exec=/usr/libexec/hw-test/launcher.sh
+TryExec=/usr/libexec/hw-test/launcher.sh
 Keywords=PC;Test;System;CPU;Memory;Cache;Hardware;Computer;Server;
 Categories=ConsoleOnly;System;Utility;

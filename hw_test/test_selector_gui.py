@@ -111,20 +111,6 @@ class TestSelectorGUI:
         """Check if a capability is available."""
         checks = {
             "fwupd": ["which", "fwupdmgr"],
-            "numa": [
-                "bash",
-                "-c",
-                "test $(lscpu --parse=NODE 2>/dev/null | grep -v '^#' | sort -u | wc -l) -gt 1",
-            ],
-            "webcam": ["bash", "-c", "ls /dev/video* >/dev/null 2>&1"],
-            "fingerprint": [
-                "bash",
-                "-c",
-                "lsusb 2>/dev/null | grep -qi 'fingerprint\\|goodix\\|validity'",
-            ],
-            "bluetooth": ["which", "bluetoothctl"],
-            "ipmi": ["which", "ipmitool"],
-            "smartcard": ["which", "pcsc_scan"],
             "glmark2": ["which", "glmark2"],
         }
 
@@ -151,12 +137,6 @@ class TestSelectorGUI:
         # Check capabilities
         caps = {
             "fwupd": self._check_capability("fwupd"),
-            "numa": self._check_capability("numa"),
-            "webcam": self._check_capability("webcam"),
-            "fingerprint": self._check_capability("fingerprint"),
-            "bluetooth": self._check_capability("bluetooth"),
-            "ipmi": self._check_capability("ipmi"),
-            "smartcard": self._check_capability("smartcard"),
             "glmark2": self._check_capability("glmark2"),
         }
 
@@ -172,6 +152,7 @@ class TestSelectorGUI:
         )
 
         # Build test items with descriptions
+        # Note: test IDs must match step names in hw_test/steps/__init__.py
         test_items = [
             # Basic tests
             (
@@ -212,127 +193,113 @@ class TestSelectorGUI:
             ("express_test", "Экспресс-тест", "Быстрая проверка основных функций", True),
             # Special tests
             ("syslogs", "Анализ логов", "Проверка системных журналов на ошибки", True),
-            ("numa_test", "NUMA топология", "Проверка топологии NUMA", caps.get("numa", False)),
-            ("webcam_test", "Веб-камеры", "Проверка веб-камер", caps.get("webcam", False)),
-            (
-                "fingerprint_test",
-                "Сканеры отпечатков",
-                "Проверка сканеров отпечатков пальцев",
-                caps.get("fingerprint", False),
-            ),
-            (
-                "bluetooth_test",
-                "Bluetooth",
-                "Проверка Bluetooth адаптера",
-                caps.get("bluetooth", False),
-            ),
-            ("ipmi_test", "IPMI/BMC", "Проверка интерфейса IPMI", caps.get("ipmi", False)),
-            ("smartcard_test", "Смарт-карты", "Проверка смарт-карт", caps.get("smartcard", False)),
             # System update
             ("upgrade", "Обновление системы", "Обновление пакетов системы", True),
             ("prepare", "Подготовка системы", "Подготовка к тестированию", True),
         ]
 
-        # Build yad command
-        yad_cmd = [
-            "yad",
-            "--title=Выбор параметров тестирования",
-            "--width=700",
-            "--height=650",
-            "--button=gtk-ok:0",
-            "--button=gtk-cancel:1",
-            "--notebooks",
-        ]
+        # Filter available tests
+        available_tests = [(tid, tname, tdesc) for tid, tname, tdesc, avail in test_items if avail]
 
-        # Page 1: System Info
-        yad_cmd.extend(
-            [
-                "--tab=Информация о системе",
-                f"--field={system_text}:LBL",
-                "",
-            ]
-        )
+        # Show system info first
+        self._show_system_info(system_text)
 
-        # Page 2: Test Selection
-        page2_fields = []
-        for test_id, test_name, test_desc, available in test_items:
-            if available:
-                # Use checkbox with tooltip
-                page2_fields.extend(
-                    [
-                        f"--field={test_name}:CHK",
-                        "TRUE",  # Default checked
-                    ]
-                )
+        # Show test selection
+        selected = self._show_test_selection(available_tests, selected_tests)
 
-        yad_cmd.extend(page2_fields)
-        yad_cmd.extend(["--tab=Тесты"])
+        if selected:
+            return selected
 
-        # Page 3: Presets
-        yad_cmd.extend(
-            [
-                "--tab=Пресеты",
-                "--field=Полный тест (все доступные):RB",
-                "TRUE",
-                "--field=Базовый тест (минимальный):RB",
-                "FALSE",
-                "--field=Экспресс тест (быстрый):RB",
-                "FALSE",
-                "--field=Производительность (бенчмарки):RB",
-                "FALSE",
-            ]
-        )
+        # If cancelled, return default
+        from hw_test.steps import DEFAULT_STEP_ORDER
 
-        # Run yad
+        return DEFAULT_STEP_ORDER.copy()
+
+    def _show_system_info(self, system_text: str) -> None:
+        """Show system information dialog."""
+        try:
+            subprocess.run(
+                [
+                    "yad",
+                    "--info",
+                    "--title",
+                    "Информация о системе",
+                    "--text",
+                    system_text,
+                    "--image",
+                    "computer",
+                    "--button",
+                    "Продолжить:0",
+                    "--width=500",
+                    "--height=400",
+                ],
+                timeout=60,
+            )
+        except Exception as e:
+            print(f"Failed to show system info: {e}")
+
+    def _show_test_selection(
+        self, available_tests: List[Tuple[str, str, str]], selected_tests: Optional[List[str]]
+    ) -> Optional[List[str]]:
+        """Show test selection dialog."""
+        # Build checklist items
+        checklist_items = []
+        for test_id, test_name, test_desc in available_tests:
+            # Check if this test was previously selected
+            is_selected = selected_tests is None or test_id in selected_tests
+            checklist_items.extend([test_id, test_name, test_desc, str(is_selected).lower()])
+
         try:
             result = subprocess.run(
-                yad_cmd,
+                [
+                    "yad",
+                    "--checklist",
+                    "--title",
+                    "Выбор параметров тестирования",
+                    "--text",
+                    "Выберите тесты для выполнения:",
+                    "--column",
+                    "ID",
+                    "--column",
+                    "Название",
+                    "--column",
+                    "Описание",
+                    "--column",
+                    "Выбор",
+                    "--checklist-column",
+                    "3",
+                    "--multiple",
+                    "--separator",
+                    ",",
+                    "--width=700",
+                    "--height=500",
+                    "--button",
+                    "gtk-cancel:1",
+                    "--button",
+                    "gtk-ok:0",
+                ]
+                + checklist_items,
                 capture_output=True,
                 text=True,
+                timeout=300,
             )
 
-            if result.returncode != 0:
-                return None
+            if result.returncode == 0 and result.stdout.strip():
+                # Parse output - yad returns comma-separated IDs
+                selected_ids = [
+                    tid.strip().strip('"')
+                    for tid in result.stdout.strip().split(",")
+                    if tid.strip()
+                ]
+                return selected_ids if selected_ids else None
 
-            output = result.stdout.strip().split("|")
+            return None
 
-            # Parse output
-            # First field from each tab
-            # Tab 1 (System Info): just display, no input
-            # Tab 2 (Tests): checkboxes
-            # Tab 3 (Presets): radio button selection
-
-            # Check if preset selected (last field)
-            preset_field = output[-1] if output else ""
-
-            if "Полный" in preset_field:
-                # Return all available tests
-                return [t[0] for t in test_items if t[3]]
-            elif "Базовый" in preset_field:
-                return ["hardware_detection", "system_check", "log_collection"]
-            elif "Экспресс" in preset_field:
-                return ["express_test", "hardware_detection", "log_collection"]
-            elif "Производительность" in preset_field:
-                return ["performance", "diskperf", "glmark", "cpupower"]
-
-            # Otherwise, parse checkboxes
-            # Skip first field (system info display) and last field (preset)
-            selected = []
-            test_idx = 0
-            for test_id, test_name, test_desc, available in test_items:
-                if available:
-                    # Checkbox value is at position 1 + test_idx (skip system info field)
-                    checkbox_idx = 1 + test_idx
-                    if checkbox_idx < len(output):
-                        val = output[checkbox_idx].strip().lower()
-                        if val in ["true", "1", "t"]:
-                            selected.append(test_id)
-                    test_idx += 1
-
-            return selected if selected else None
-
+        except FileNotFoundError as e:
+            print(f"Test selection dialog failed: yad not found - {e}")
+            return None
         except Exception as e:
-            print(f"Error running test selector: {e}")
+            print(f"Test selection dialog failed: {e}")
             return None
 
 
