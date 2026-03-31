@@ -8,12 +8,14 @@ import tarfile
 import tempfile
 import shutil
 import json
+import base64
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
 from hw_test.types import StepResult, TestStatus, HardwareInfo, TestConfig
 from hw_test.steps.base import BaseHWStep
+from hw_test.auth import run_as_root
 
 
 class LogCollectionStep(BaseHWStep):
@@ -28,6 +30,20 @@ class LogCollectionStep(BaseHWStep):
         self.collected_files: List[str] = []
         self.archive_path: Optional[str] = None
 
+    def _save_file_as_root(self, filepath: str, content: str) -> bool:
+        """Save content to file using root privileges."""
+        try:
+            encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
+            cmd = f"echo {encoded} | base64 -d > {filepath} && chmod 644 {filepath}"
+            stdout, stderr, rc = run_as_root(["bash", "-c", cmd])
+            if rc != 0:
+                self.logger.warning(f"Failed to save {filepath}: {stderr}")
+                return False
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to save {filepath}: {e}")
+            return False
+
     def _run_command(
         self,
         cmd: List[str],
@@ -39,17 +55,15 @@ class LogCollectionStep(BaseHWStep):
         if use_root:
             stdout, stderr, rc = self.run_command(cmd, timeout=timeout, use_root=True)
             if output_file and rc == 0:
-                with open(output_file, "w") as f:
-                    f.write(stdout)
+                self._save_file_as_root(output_file, stdout)
             return stdout, stderr, rc
         else:
             try:
                 if output_file:
-                    with open(output_file, "w") as f:
-                        result = subprocess.run(
-                            cmd, stdout=f, stderr=subprocess.PIPE, text=True, timeout=timeout
-                        )
-                        return "", result.stderr, result.returncode
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+                    if result.returncode == 0:
+                        self._save_file_as_root(output_file, result.stdout)
+                    return result.stdout, result.stderr, result.returncode
                 else:
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
                     return result.stdout, result.stderr, result.returncode
@@ -71,12 +85,11 @@ class LogCollectionStep(BaseHWStep):
                 self.collected_files.append(filepath)
                 return True
             elif stderr:
-                # Write error message to file
-                with open(filepath, "w") as f:
-                    f.write(f"Command failed: {' '.join(cmd)}\n")
-                    f.write(f"Error: {stderr}\n")
-                self.collected_files.append(filepath)
-                return True
+                # Write error message to file using root
+                error_content = f"Command failed: {' '.join(cmd)}\nError: {stderr}\n"
+                if self._save_file_as_root(filepath, error_content):
+                    self.collected_files.append(filepath)
+                    return True
 
         except Exception as e:
             self.logger.debug(f"Failed to collect {filename}: {e}")
@@ -227,9 +240,9 @@ class LogCollectionStep(BaseHWStep):
                 }
 
             summary_path = os.path.join(work_dir, "summary.json")
-            with open(summary_path, "w") as f:
-                json.dump(summary, f, indent=2, default=str)
-            self.collected_files.append(summary_path)
+            summary_content = json.dumps(summary, indent=2, default=str)
+            if self._save_file_as_root(summary_path, summary_content):
+                self.collected_files.append(summary_path)
 
             # Create archive
             output_dir = self.config.data_dir

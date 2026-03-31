@@ -7,6 +7,7 @@ import shutil
 import tarfile
 import json
 import gzip
+import base64
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -14,6 +15,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from hw_test.types import StepResult, TestStatus, HardwareInfo, TestConfig
 from hw_test.steps.base import BaseHWStep
 from hw_test.l10n import get_l10n, _
+from hw_test.auth import run_as_root
 
 
 class FinalizeStep(BaseHWStep):
@@ -65,10 +67,29 @@ class FinalizeStep(BaseHWStep):
         return gzip.compress(data.encode("utf-8", errors="ignore"), compresslevel=9)
 
     def _save_gzip(self, filepath: Path, content: str) -> bool:
-        """Save content to gzipped file."""
+        """Save content to gzipped file using root privileges."""
         try:
-            with open(filepath, "wb") as f:
-                f.write(self._gzip_compress(content))
+            compressed = self._gzip_compress(content)
+            encoded = base64.b64encode(compressed).decode("ascii")
+            cmd = f"echo {encoded} | base64 -d > {filepath} && chmod 644 {filepath}"
+            stdout, stderr, rc = run_as_root(["bash", "-c", cmd])
+            if rc != 0:
+                self.logger.warning(f"Failed to save {filepath}: {stderr}")
+                return False
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to save {filepath}: {e}")
+            return False
+
+    def _save_text(self, filepath: Path, content: str) -> bool:
+        """Save text content to file using root privileges."""
+        try:
+            encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
+            cmd = f"echo {encoded} | base64 -d > {filepath} && chmod 644 {filepath}"
+            stdout, stderr, rc = run_as_root(["bash", "-c", cmd])
+            if rc != 0:
+                self.logger.warning(f"Failed to save {filepath}: {stderr}")
+                return False
             return True
         except Exception as e:
             self.logger.warning(f"Failed to save {filepath}: {e}")
@@ -83,7 +104,9 @@ class FinalizeStep(BaseHWStep):
         }
 
         log_dir = workdir / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
+        # Create log directory using root
+        cmd = f"mkdir -p {log_dir} && chmod 755 {log_dir}"
+        run_as_root(["bash", "-c", cmd])
 
         # System logs
         log_files = {
@@ -154,9 +177,8 @@ class FinalizeStep(BaseHWStep):
             stdout, _, rc = self._run_command(["inxi", opt, "-c0"])
             if rc == 0 and stdout:
                 filepath = workdir / filename
-                with open(filepath, "w") as f:
-                    f.write(stdout)
-                result["files"].append(filename)
+                if self._save_text(filepath, stdout):
+                    result["files"].append(filename)
 
         return result
 
@@ -181,15 +203,16 @@ class FinalizeStep(BaseHWStep):
         }
 
         cmd_dir = workdir / "commands"
-        cmd_dir.mkdir(parents=True, exist_ok=True)
+        # Create commands directory using root
+        cmd = f"mkdir -p {cmd_dir} && chmod 755 {cmd_dir}"
+        run_as_root(["bash", "-c", cmd])
 
         for filename, cmd in commands.items():
             stdout, _, rc = self._run_command(cmd)
             if rc == 0 and stdout:
                 filepath = cmd_dir / filename
-                with open(filepath, "w") as f:
-                    f.write(stdout)
-                result["files"].append(filename)
+                if self._save_text(filepath, stdout):
+                    result["files"].append(filename)
 
         return result
 
@@ -213,76 +236,90 @@ class FinalizeStep(BaseHWStep):
             }
 
         filepath = workdir / "results.json"
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
-
-        return str(filepath)
+        content = json.dumps(results, indent=2, ensure_ascii=False)
+        if self._save_text(filepath, content):
+            return str(filepath)
+        return ""
 
     def _generate_report(self, workdir: Path, step_results: List[Dict]) -> str:
         """Generate text report."""
         filepath = workdir / "report.txt"
 
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write("=" * 60 + "\n")
-            f.write(f"{self.l10n.get('program_name')} - {self.l10n.get('summary_title')}\n")
-            f.write("=" * 60 + "\n\n")
+        lines = [
+            "=" * 60,
+            f"{self.l10n.get('program_name')} - {self.l10n.get('summary_title')}",
+            "=" * 60,
+            "",
+            f"Test Name: {self.config.name}",
+            f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            "-" * 60,
+            "HARDWARE INFORMATION",
+            "-" * 60,
+        ]
 
-            f.write(f"Test Name: {self.config.name}\n")
-            f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        if self.hardware_info:
+            lines.extend(
+                [
+                    f"CPU: {self.hardware_info.cpu_model}",
+                    f"Cores: {self.hardware_info.cpu_cores}",
+                    f"Memory: {self.hardware_info.total_memory_mb} MB",
+                    f"System: {self.hardware_info.system_manufacturer} {self.hardware_info.system_product}",
+                ]
+            )
+        else:
+            lines.append("Hardware information not available")
 
-            # Hardware info
-            f.write("-" * 60 + "\n")
-            f.write("HARDWARE INFORMATION\n")
-            f.write("-" * 60 + "\n")
+        lines.extend(
+            [
+                "",
+                "-" * 60,
+                "TEST RESULTS",
+                "-" * 60,
+                "",
+            ]
+        )
 
-            if self.hardware_info:
-                f.write(f"CPU: {self.hardware_info.cpu_model}\n")
-                f.write(f"Cores: {self.hardware_info.cpu_cores}\n")
-                f.write(f"Memory: {self.hardware_info.total_memory_mb} MB\n")
-                f.write(
-                    f"System: {self.hardware_info.system_manufacturer} {self.hardware_info.system_product}\n"
-                )
-            else:
-                f.write("Hardware information not available\n")
+        passed = failed = warnings = 0
+        for result in step_results:
+            status = result.get("status", "unknown")
+            step_name = result.get("step_name", "Unknown")
+            message = result.get("message", "")
 
-            # Test results
-            f.write("\n")
-            f.write("-" * 60 + "\n")
-            f.write("TEST RESULTS\n")
-            f.write("-" * 60 + "\n\n")
+            lines.append(f"[{status.upper()}] {step_name}")
+            lines.append(f"  {message}")
+            lines.append("")
 
-            passed = failed = warnings = 0
-            for result in step_results:
-                status = result.get("status", "unknown")
-                step_name = result.get("step_name", "Unknown")
-                message = result.get("message", "")
+            if status == "passed":
+                passed += 1
+            elif status in ["failed", "error"]:
+                failed += 1
+            elif status == "warning":
+                warnings += 1
 
-                f.write(f"[{status.upper()}] {step_name}\n")
-                f.write(f"  {message}\n\n")
+        lines.extend(
+            [
+                "-" * 60,
+                "SUMMARY",
+                "-" * 60,
+                f"Total: {len(step_results)}",
+                f"Passed: {passed}",
+                f"Failed: {failed}",
+                f"Warnings: {warnings}",
+            ]
+        )
 
-                if status == "passed":
-                    passed += 1
-                elif status in ["failed", "error"]:
-                    failed += 1
-                elif status == "warning":
-                    warnings += 1
+        if failed > 0:
+            lines.append(f"\nRESULT: {self.l10n.get('test_failed')}")
+        elif warnings > 0:
+            lines.append(f"\nRESULT: {self.l10n.get('test_warning')}")
+        else:
+            lines.append(f"\nRESULT: {self.l10n.get('test_passed')}")
 
-            f.write("-" * 60 + "\n")
-            f.write("SUMMARY\n")
-            f.write("-" * 60 + "\n")
-            f.write(f"Total: {len(step_results)}\n")
-            f.write(f"Passed: {passed}\n")
-            f.write(f"Failed: {failed}\n")
-            f.write(f"Warnings: {warnings}\n")
-
-            if failed > 0:
-                f.write(f"\nRESULT: {self.l10n.get('test_failed')}\n")
-            elif warnings > 0:
-                f.write(f"\nRESULT: {self.l10n.get('test_warning')}\n")
-            else:
-                f.write(f"\nRESULT: {self.l10n.get('test_passed')}\n")
-
-        return str(filepath)
+        content = "\n".join(lines)
+        if self._save_text(filepath, content):
+            return str(filepath)
+        return ""
 
     def _create_archive(self, workdir: Path) -> Optional[str]:
         """Create tar.gz archive in hw-test format."""

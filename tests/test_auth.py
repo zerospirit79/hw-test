@@ -32,6 +32,7 @@ class TestRootAuthenticator:
         assert authenticator._authenticated is False
         assert authenticator._password is None
 
+    @patch("hw_test.auth.HAS_PEXPECT", False)
     @patch("hw_test.auth.subprocess.run")
     def test_verify_password_success(self, mock_run, authenticator):
         """Test password verification success."""
@@ -40,6 +41,7 @@ class TestRootAuthenticator:
         result = authenticator._verify_password("correct_password")
         assert result is True
 
+    @patch("hw_test.auth.HAS_PEXPECT", False)
     @patch("hw_test.auth.subprocess.run")
     def test_verify_password_failure(self, mock_run, authenticator):
         """Test password verification failure."""
@@ -48,6 +50,7 @@ class TestRootAuthenticator:
         result = authenticator._verify_password("wrong_password")
         assert result is False
 
+    @patch("hw_test.auth.HAS_PEXPECT", False)
     @patch("hw_test.auth.getpass.getpass")
     @patch("hw_test.auth.subprocess.run")
     def test_authenticate_success(self, mock_run, mock_getpass, authenticator):
@@ -60,6 +63,7 @@ class TestRootAuthenticator:
         assert result is True
         assert authenticator.is_authenticated() is True
 
+    @patch("hw_test.auth.HAS_PEXPECT", False)
     @patch("hw_test.auth.getpass.getpass")
     @patch("hw_test.auth.subprocess.run")
     def test_authenticate_wrong_password(self, mock_run, mock_getpass, authenticator):
@@ -80,6 +84,7 @@ class TestRootAuthenticator:
 
         assert result is False
 
+    @patch("hw_test.auth.HAS_PEXPECT", False)
     @patch("hw_test.auth.subprocess.run")
     def test_run_command_authenticated(self, mock_run, authenticator):
         """Test running command after authentication."""

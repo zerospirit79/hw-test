@@ -2,7 +2,7 @@
 
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 
 
 class TestStatus(Enum):
@@ -76,3 +76,4 @@ class TestConfig:
     skip_steps: List[str] = field(default_factory=list)
     timeout_seconds: int = 3600
     language: str = "ru"  # 'en' or 'ru'
+    write_file_callback: Optional[Callable] = None  # Callback for writing files as root

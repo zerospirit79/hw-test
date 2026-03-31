@@ -6,11 +6,13 @@ import os
 import gzip
 import subprocess
 import re
+import base64
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
 from hw_test.types import StepResult, TestStatus, HardwareInfo, TestConfig
 from hw_test.steps.base import BaseHWStep
+from hw_test.auth import run_as_root
 
 
 class SyslogsStep(BaseHWStep):
@@ -46,15 +48,28 @@ class SyslogsStep(BaseHWStep):
         return gzip.compress(data.encode("utf-8", errors="ignore"), compresslevel=9)
 
     def _save_file(self, filename: str, content: str, compress: bool = False) -> str:
-        """Save content to file."""
+        """Save content to file using root privileges."""
         filepath = self.logs_dir / filename
         try:
             if compress:
-                with open(filepath, "wb") as f:
-                    f.write(self._gzip_compress(content))
+                # Compress and encode to base64
+                compressed = self._gzip_compress(content)
+                encoded = base64.b64encode(compressed).decode("ascii")
+                # Write as root using base64 decode
+                cmd = f"echo {encoded} | base64 -d > {filepath} && chmod 644 {filepath}"
+                stdout, stderr, rc = run_as_root(["bash", "-c", cmd])
+                if rc != 0:
+                    self.logger.warning(f"Failed to save {filename}: {stderr}")
+                    return ""
             else:
-                with open(filepath, "w", encoding="utf-8", errors="ignore") as f:
-                    f.write(content)
+                # Encode content to base64
+                encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
+                # Write as root using base64 decode
+                cmd = f"echo {encoded} | base64 -d > {filepath} && chmod 644 {filepath}"
+                stdout, stderr, rc = run_as_root(["bash", "-c", cmd])
+                if rc != 0:
+                    self.logger.warning(f"Failed to save {filename}: {stderr}")
+                    return ""
             return str(filepath)
         except Exception as e:
             self.logger.warning(f"Failed to save {filename}: {e}")

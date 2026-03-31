@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import subprocess
 import re
+import base64
+import os
 from typing import List, Dict, Any, Optional, Tuple
+from pathlib import Path
 
 from hw_test.types import StepResult, TestStatus, HardwareInfo, TestConfig
 from hw_test.steps.base import BaseHWStep
+from hw_test.auth import run_as_root
 
 
 class HardwareDetectionStep(BaseHWStep):
@@ -25,10 +29,24 @@ class HardwareDetectionStep(BaseHWStep):
 
     def _run_command(
         self, cmd: List[str], timeout: int = 30, use_root: bool = True
-    ) -> Tuple[str, str]:
-        """Run a command and return (stdout, stderr)."""
+    ) -> Tuple[str, str, int]:
+        """Run a command and return (stdout, stderr, returncode)."""
         stdout, stderr, rc = self.run_command(cmd, timeout=timeout, use_root=use_root)
-        return stdout, stderr
+        return stdout, stderr, rc
+
+    def _save_file_as_root(self, filepath: Path, content: str) -> bool:
+        """Save content to file using root privileges."""
+        try:
+            encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
+            cmd = f"echo {encoded} | base64 -d > {filepath} && chmod 644 {filepath}"
+            stdout, stderr, rc = run_as_root(["bash", "-c", cmd])
+            if rc != 0:
+                self.logger.warning(f"Failed to save {filepath}: {stderr}")
+                return False
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to save {filepath}: {e}")
+            return False
 
     def _detect_cpu(self) -> None:
         """Detect CPU information."""
@@ -40,7 +58,7 @@ class HardwareDetectionStep(BaseHWStep):
             self.detected_hardware.cpu_cores = info.get("count", 0)
 
             # Get frequency
-            stdout, _ = self._run_command(["lscpu"])
+            stdout, _, _ = self._run_command(["lscpu"])
             for line in stdout.split("\n"):
                 if "CPU MHz" in line or "MHz" in line:
                     match = re.search(r"([\d.]+)", line)
@@ -49,7 +67,7 @@ class HardwareDetectionStep(BaseHWStep):
                         break
 
             # Threads
-            stdout, _ = self._run_command(["nproc", "--all"])
+            stdout, _, _ = self._run_command(["nproc", "--all"])
             if stdout.strip().isdigit():
                 self.detected_hardware.cpu_threads = int(stdout.strip())
 
@@ -131,13 +149,13 @@ class HardwareDetectionStep(BaseHWStep):
         gpus = []
 
         # Try lspci for VGA controllers
-        stdout, _ = self._run_command(["lspci", "-nn"])
+        stdout, _, _ = self._run_command(["lspci", "-nn"])
         for line in stdout.split("\n"):
             if "VGA" in line or "3D" in line or "Display" in line:
                 gpus.append({"description": line.strip(), "source": "lspci"})
 
         # Try nvidia-smi if available
-        stdout, _ = self._run_command(["nvidia-smi", "-L"])
+        stdout, _, _ = self._run_command(["nvidia-smi", "-L"])
         if stdout:
             for line in stdout.split("\n"):
                 if line.strip():
@@ -148,7 +166,7 @@ class HardwareDetectionStep(BaseHWStep):
     def _detect_audio(self) -> None:
         """Detect audio devices."""
         audio = []
-        stdout, _ = self._run_command(["aplay", "-l"])
+        stdout, _, _ = self._run_command(["aplay", "-l"])
 
         if stdout:
             current_card = {}
@@ -174,7 +192,7 @@ class HardwareDetectionStep(BaseHWStep):
     def _detect_usb(self) -> None:
         """Detect USB devices."""
         usb = []
-        stdout, _ = self._run_command(["lsusb"])
+        stdout, _, _ = self._run_command(["lsusb"])
 
         for line in stdout.split("\n"):
             if line.strip() and "Bus" in line:
@@ -211,13 +229,13 @@ class HardwareDetectionStep(BaseHWStep):
             self.detected_hardware.numa_nodes = 1
 
         # IPMI detection - use root
-        stdout, _ = self._run_command(["ipmitool", "mc", "info"], use_root=True)
+        stdout, _, _ = self._run_command(["ipmitool", "mc", "info"], use_root=True)
         self.detected_hardware.ipmi_detected = "Manufacturer" in stdout
 
     def _detect_webcams(self) -> None:
         """Detect webcams."""
         webcams = []
-        stdout, _ = self._run_command(["v4l2-ctl", "--list-devices"])
+        stdout, _, _ = self._run_command(["v4l2-ctl", "--list-devices"])
 
         if stdout:
             current_device = {}
@@ -234,7 +252,7 @@ class HardwareDetectionStep(BaseHWStep):
 
         # Also check via lsusb
         if not webcams:
-            stdout, _ = self._run_command(["lsusb"])
+            stdout, _, _ = self._run_command(["lsusb"])
             for line in stdout.split("\n"):
                 if "Camera" in line or "Webcam" in line:
                     webcams.append({"name": line.strip(), "source": "lsusb"})
@@ -244,7 +262,7 @@ class HardwareDetectionStep(BaseHWStep):
     def _detect_fingerprint_readers(self) -> None:
         """Detect fingerprint readers."""
         readers = []
-        stdout, _ = self._run_command(["lsusb"])
+        stdout, _, _ = self._run_command(["lsusb"])
 
         for line in stdout.split("\n"):
             if any(
@@ -283,7 +301,7 @@ class HardwareDetectionStep(BaseHWStep):
 
         # Alternative: check lsusb
         if not bluetooth_adapters:
-            stdout, _ = self._run_command(["lsusb"])
+            stdout, _, _ = self._run_command(["lsusb"])
             for line in stdout.split("\n"):
                 if "bluetooth" in line.lower():
                     bluetooth_adapters.append({"description": line.strip()})
@@ -295,7 +313,7 @@ class HardwareDetectionStep(BaseHWStep):
     def _detect_smartcard_readers(self) -> None:
         """Detect smart card readers."""
         readers = []
-        stdout, _ = self._run_command(["pcsc_scan", "-m"], timeout=5)
+        stdout, _, _ = self._run_command(["pcsc_scan", "-m"], timeout=5)
 
         if stdout:
             for line in stdout.split("\n"):
@@ -304,7 +322,7 @@ class HardwareDetectionStep(BaseHWStep):
 
         # Alternative: check lsusb
         if not readers:
-            stdout, _ = self._run_command(["lsusb"])
+            stdout, _, _ = self._run_command(["lsusb"])
             for line in stdout.split("\n"):
                 if any(kw in line.lower() for kw in ["smart", "cac", "scr", "omnikey", "acr"]):
                     readers.append({"description": line.strip()})
@@ -382,10 +400,9 @@ class HardwareDetectionStep(BaseHWStep):
                 stdout, stderr, rc = self._run_command(cmd, timeout=timeout)
                 if rc == 0 or stdout:
                     filepath = output_dir / filename
-                    with open(filepath, "w", encoding="utf-8", errors="replace") as f:
-                        f.write(stdout)
-                    self.logger.debug(f"Saved {filename}")
-                    return True
+                    if self._save_file_as_root(filepath, stdout):
+                        self.logger.debug(f"Saved {filename}")
+                        return True
             except Exception as e:
                 self.logger.debug(f"Failed to collect {filename}: {e}")
             return False
@@ -477,10 +494,9 @@ class HardwareDetectionStep(BaseHWStep):
                 stdout, stderr, rc = self._run_command(cmd, timeout=timeout)
                 if rc == 0 or stdout:
                     filepath = output_dir / filename
-                    with open(filepath, "w", encoding="utf-8", errors="replace") as f:
-                        f.write(stdout)
-                    self.logger.debug(f"Saved {filename}")
-                    return True
+                    if self._save_file_as_root(filepath, stdout):
+                        self.logger.debug(f"Saved {filename}")
+                        return True
             except Exception as e:
                 self.logger.debug(f"Failed to collect {filename}: {e}")
             return False

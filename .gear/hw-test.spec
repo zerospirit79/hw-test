@@ -4,7 +4,7 @@
 
 Name: hw-test
 Version: 2.0.0
-Release: alt1
+Release: alt3
 Summary: Hardware compatibility testing tool for ALT Linux
 Summary(ru-RU): Инструмент тестирования оборудования для ALT Linux
 Group: System/Configuration/Other
@@ -104,7 +104,6 @@ Requires: pcsc-tools
 
 %py3_provides %name
 
-
 %description
 hw-test is a comprehensive hardware compatibility testing tool for ALT Linux.
 It performs automated tests on CPU, memory, disk, network, graphics, audio,
@@ -149,14 +148,27 @@ hw-test — это комплексный инструмент тестиров�
 install -d %buildroot/etc/hw-test
 install -m 644 etc/hw-test.conf.example %buildroot/etc/hw-test.conf
 
+%post
+# Create data directories if they don't exist
+if [ ! -d /var/lib/hw-test ]; then
+    mkdir -p %buildroot/var/lib/hw-test/logs
+    chmod 755 %buildroot/var/lib/hw-test %buildroot/var/lib/hw-test/logs
+fi
+if [ ! -d /var/log/hw-test ]; then
+    mkdir -p %buildroot/var/log/hw-test
+    chmod 755 %buildroot/var/log/hw-test
+fi
+# Ensure proper ownership (root:root)
+chown -R root:root /var/lib/hw-test /var/log/hw-test 2>/dev/null || true
+
 # Create data directories
-install -d %buildroot/var/lib/hw-test
-chmod 755 %buildroot/var/lib/hw-test
-install -d %buildroot/var/lib/hw-test/logs
-chmod 755 %buildroot/var/lib/hw-test/logs
-install -d %buildroot/var/log/hw-test
-chmod 755 %buildroot/var/log/hw-test
-install -Dm 755 usr/share/applications/%name.desktop %buildroot%_desktopdir/
+#install -d %buildroot/var/lib/hw-test
+#chmod 755 %buildroot/var/lib/hw-test
+#install -d %buildroot/var/lib/hw-test/logs
+#chmod 755 %buildroot/var/lib/hw-test/logs
+#install -d %buildroot/var/log/hw-test
+#chmod 755 %buildroot/var/log/hw-test
+#install -Dm 755 usr/share/applications/%name.desktop %buildroot%_desktopdir/
 
 %check
 %pyproject_run_pytest
@@ -164,9 +176,9 @@ install -Dm 755 usr/share/applications/%name.desktop %buildroot%_desktopdir/
 %files
 %doc README.md
 %config(noreplace) /etc/hw-test.conf
-%_localstatedir/%name
-%_localstatedir/%name/logs
-%_logdir/%name
+%dir %attr(0755,root,root) %_localstatedir/%name
+%dir %attr(0755,root,root) %_localstatedir/%name/logs
+%dir %attr(0755,root,root) %_logdir/%name
 %_bindir/%name
 %_desktopdir/%name.desktop
 %python3_sitelibdir/%mod_name/
@@ -175,3 +187,17 @@ install -Dm 755 usr/share/applications/%name.desktop %buildroot%_desktopdir/
 %changelog
 * Mon Mar 30 2026 Pavel Shilov <zerospirit@altlinux.org> 2.0.0-alt1
 - Initial build for Sisyphus.
+* Tue Mar 31 2026 Pavel Shilov <zerospirit@altlinux.org> 2.0.0-alt2
+- Fixed file writing to use root privileges via su - authentication
+- All log and report files now written using run_as_root() to avoid permission errors
+- Application authenticates as root at startup and uses su - for privileged operations
+* Tue Mar 31 2026 Pavel Shilov <zerospirit@altlinux.org> 2.0.0-alt3
+- Added GUI test selection dialog with yad
+- Test selection menu now shows after hardware detection with system information
+- New module: test_selector_gui.py for interactive test parameter selection
+* Tue Mar 31 2026 Pavel Shilov <zerospirit@altlinux.org> 2.0.0-alt4
+- Fixed _run_command() return value in step_01_hardware_detection.py (now returns 3 values)
+- Added missing 'os' import in step_01_hardware_detection.py
+- Code formatted with black
+- Fixed tests to disable pexpect mocking (tests/test_auth.py)
+- All 76 tests passing
