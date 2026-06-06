@@ -24,7 +24,7 @@ from hw_test.context import FatalError, RuntimeContext, get_context, graphical_s
 from hw_test.paths import PROGNAME, libexec_dir
 from hw_test.resume_autorun import clear_resume_autorun, setup_resume_autorun
 from hw_test.steps import create_step, list_steps
-from hw_test.terminal import close_desktop_terminal_if_needed, read_key
+from hw_test.terminal import close_desktop_terminal_if_needed, read_key, test_user_uid
 from hw_test.version import HWTEST_VERSION
 
 
@@ -67,12 +67,16 @@ def pause_before_exit(ctx: RuntimeContext) -> None:
         return
     if not getattr(ctx, "desktop_icon_start", None):
         return
-    if not graphical_session():
-        return
-    msg = ctx.L("L050", "Press any key to close this window...")
-    print(f"\n{msg}", flush=True)
-    read_key()
-    close_desktop_terminal_if_needed()
+    test_uid = test_user_uid(ctx.username)
+    if os.geteuid() == 0 and ctx.username:
+        from hw_test.de_terminal import apply_graphical_session_env
+
+        apply_graphical_session_env(test_uid)
+    if graphical_session():
+        msg = ctx.L("L050", "Press any key to close this window...")
+        print(f"\n{msg}", flush=True)
+        read_key()
+    close_desktop_terminal_if_needed(uid=test_uid)
 
 
 def _restart_extra_args(ctx: RuntimeContext) -> str:
@@ -382,6 +386,12 @@ def _handoff_user_message(ctx: RuntimeContext, next_step: str) -> str:
     return "Switching to user session..."
 
 
+def _exit_after_handoff(ctx: RuntimeContext) -> None:
+    if getattr(ctx, "desktop_icon_start", None):
+        close_desktop_terminal_if_needed(uid=test_user_uid(ctx.username))
+    raise SystemExit(0)
+
+
 def _handoff_to_user_session(ctx: RuntimeContext) -> None:
     next_step = ""
     stepfile = Path(ctx.workdir) / "STATE" / "STEP"
@@ -445,7 +455,7 @@ def _handoff_to_user_session(ctx: RuntimeContext) -> None:
                         "Continue there; you may close this root window."
                     )
             print(f"\n{ctx.CLR_OK}{msg}{ctx.CLR_NORM}\n", flush=True)
-            raise SystemExit(0)
+            _exit_after_handoff(ctx)
     if (
         next_step == "config"
         and not graphical_session()
@@ -466,7 +476,7 @@ def _handoff_to_user_session(ctx: RuntimeContext) -> None:
                     "Complete the configuration there."
                 )
             print(f"\n{ctx.CLR_OK}{msg}{ctx.CLR_NORM}\n", flush=True)
-            raise SystemExit(0)
+            _exit_after_handoff(ctx)
     if ctx.langid == "ru":
         msg = "Продолжите тестирование от пользователя: hw-test --continue"
         if next_step == "config":
@@ -480,7 +490,7 @@ def _handoff_to_user_session(ctx: RuntimeContext) -> None:
         elif next_step == "express":
             msg = "Step 9 (express test): hw-test --continue"
     print(f"\n{ctx.CLR_OK}{msg}{ctx.CLR_NORM}\n", flush=True)
-    raise SystemExit(0)
+    _exit_after_handoff(ctx)
 
 
 def _express_retry_prompt(ctx: RuntimeContext, status: int) -> None:

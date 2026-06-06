@@ -7,7 +7,7 @@
 
 Name: hw-test
 Version: 2.2.0
-Release: alt17
+Release: alt1
 
 Summary: Hardware compatibility testing tool for ALT Linux
 Summary(ru_RU): Инструмент тестирования оборудования для ALT Linux
@@ -21,7 +21,7 @@ Source: %name-%version.tar
 AutoReqProv: no
 AutoReq: noshell, noshebang
 
-BuildRequires(pre): rpm-build-python3
+BuildRequires(pre): rpm-build-python3 rpm-build-pyproject
 BuildRequires: python3(setuptools)
 BuildRequires: python3(wheel)
 %{!?_disable_check:BuildRequires: shellcheck}
@@ -84,14 +84,14 @@ Requires: ethtool
 
 %description
 hw-test is a hardware compatibility testing tool for ALT Linux, based on
-the pc-test suite and Basalt SPo methodology. It performs automated tests
+the pc-test suite and Basealt SPO methodology. It performs automated tests
 on CPU, memory, disk, network, graphics, audio, and other hardware
 components with support for express testing, log collection, and resuming
 after reboot.
 
 %description -l ru_RU
 hw-test — инструмент тестирования совместимости оборудования для ALT Linux
-на базе pc-test и методики Basalt SPo. Выполняет автоматизированные тесты
+на базе pc-test и методики Basealt SPO. Выполняет автоматизированные тесты
 процессора, памяти, дисков, сети, графики, аудио и других компонентов,
 включая экспресс-тест, сбор журналов и продолжение после перезагрузки.
 
@@ -175,7 +175,7 @@ if [ -f %_datadir/applications/%name-autostart.desktop ]; then
 		[ -s "$lastdir/STATE/STEP" ] || continue
 		mkdir -p "$homedir/.config/autostart"
 		chown "$user:$user" "$homedir/.config/autostart" 2>/dev/null || true
-		if [ -d "$homedir/.config" ] && [ "$(stat -c '%U' "$homedir/.config")" = root ]; then
+		if [ -d "$homedir/.config" ] && [ "$(stat -c '%%U' "$homedir/.config")" = root ]; then
 			chown "$user:$user" "$homedir/.config" 2>/dev/null || true
 		fi
 		cp -f %_datadir/applications/%name-autostart.desktop \
@@ -192,85 +192,25 @@ b="\\1,$(which dmesg)"
 sed -i -E "s|$a|$b|g" /etc/sudoers
 
 %check
-./check-scripts.sh
+%pyproject_run_pytest
 
 %files
 %_sysconfdir/%name.conf
 %config(noreplace) %ghost %_sysconfdir/%name-RVSETS.txt
 /etc/profile.d/hw-test-resume.sh
 %_bindir/%name
-%python3_sitelibdir/hw_test
+%python3_sitelibdir/%mod_name
 %_libexecdir/%name
 %_datadir/applications/%name.desktop
 %_datadir/applications/%name-autostart.desktop
 %_localstatedir/%name
 /usr/lib/systemd/system/%name-resume@.service
+%python3_sitelibdir/%mod_name/
+%python3_sitelibdir/%{pyproject_distinfo %mod_name}/
 
 %files doc
 %doc img html CHANGELOG.md LICENSE README.md
 
 %changelog
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt17
-- Fixed: close gnome-console after pause (HW_TEST_KGX=1, TERM_PROGRAM, SIGKILL fallback).
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt16
-- Fixed: close gnome-console (kgx) after pause on Workstation 11 (#53388);
-  ignore xvt alternative when it symlinks to kgx.
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt15
-- Fixed: express brightness on Wayland (sysfs/brightnessctl/D-Bus, xrandr fallback).
-- Fixed: pause before exit only for --desktop-icon (match pc-test; #53388).
-- Fixed: prefer xvt/gnome-terminal over kgx for GNOME terminal launch (#53388).
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt14
-- Fixed: yad form buttons use LABEL,ICON,TOOLTIP (match pc-test step-gui.sh on ALT yad 13).
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt13
-- Fixed: express manual form yad buttons (LABEL!ICON!TOOLTIP:ID); dialog sizing/wrap.
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt12
-- Fixed: headless resume runs on user login (profile.d), not at boot from multi-user.target.
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt11
-- Fixed: fio/v3d/fwupd optional tests no longer auto-enabled on detect (match pc-test);
-  diskperf runs only when selected in step 5.4.
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt10
-- Fixed: dialog test plan form (capture_output broke TUI; match config-form-tui.sh).
-- Fixed: openvt config on headless server runs via sudo hw-test --continue-on-vt (root).
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt9
-- Fixed: PermissionError removing ~/.config/autostart/hw-test.desktop at test end
-  (root-owned autostart dir from %%post; cleanup via sudo --cleanup-resume).
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt8
-- Fixed: step 5.4 shows dialog TUI in terminal (not SKIPPED with TTY or on tty1).
-- Changed: headless resume no longer uses --batch; config opens on console via openvt.
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt7
-- Fixed: batch resume no longer stops before step 5.4 (skip config, continue as root).
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt6
-- Fixed: --batch not overridden by settings.ini; config skipped without TTY
-  (systemd resume no longer fails on dialog).
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt5
-- Fixed: hw-test-resume@.service uses User=%%i instead of /usr/bin/runuser (RPM install).
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt4
-- Fixed: headless resume uses system unit hw-test-resume@user.service (no linger).
-- Fixed: --auto launch mode follows HW-TEST symlink like --continue.
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt3
-- Added: headless resume via systemd user unit hw-test-resume.service.
-
-* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt2
-- Added: hw-test-doc subpackage (methodology HTML5, screenshots, README).
-
 * Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt1
-- Rebased on pc-test 2.2.0 Python codebase (hw_test package).
-- Updated spec install layout and check-scripts (ruff, unittest).
-- pyproject.toml: runtime deps from spec (psutil, py-cpuinfo, etc.).
-
-* Mon Mar 30 2026 Pavel Shilov <zerospirit@altlinux.org> 2.0.0-alt4
-- Initial build for Sisyphus (legacy standalone Python steps).
+- Initial build for Sisyphus

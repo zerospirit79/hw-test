@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from hw_test.de_terminal import _binary_is_kgx, _real_xvt_path
 from hw_test.terminal import close_kgx_window, running_in_kgx
@@ -47,9 +47,22 @@ class KgxTerminalTests(unittest.TestCase):
     ) -> None:
         import signal
 
-        close_kgx_window()
+        close_kgx_window(uid=1000)
         kill.assert_any_call(4242, signal.SIGTERM)
         kill.assert_any_call(4242, signal.SIGKILL)
+
+    @patch("hw_test.terminal._signal_kgx_pid")
+    @patch("hw_test.terminal._find_kgx_ancestor_pid", return_value=None)
+    @patch("hw_test.terminal.subprocess.run")
+    def test_close_kgx_window_pgrep_uses_test_uid(
+        self, run: object, _find: object, signal_kgx: object
+    ) -> None:
+        run.return_value = MagicMock(stdout="2261 kgx -T PC Test -e hw-test\n", returncode=0)
+        close_kgx_window(uid=1000)
+        run.assert_called_once()
+        self.assertIn("-u", run.call_args[0][0])
+        self.assertIn("1000", run.call_args[0][0])
+        signal_kgx.assert_called_once_with(2261)
 
 
 if __name__ == "__main__":

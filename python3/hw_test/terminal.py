@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import pwd
 import shutil
 import signal
 import subprocess
@@ -12,6 +13,16 @@ from pathlib import Path
 
 _KGX_COMMS = frozenset({"kgx", "gnome-console", "Console"})
 _KGX_ENV = "HW_TEST_KGX"
+
+
+def test_user_uid(username: str | None = None) -> int:
+    """UID of the user under test (not root when hw-test runs via sudo)."""
+    if username:
+        try:
+            return pwd.getpwnam(username).pw_uid
+        except KeyError:
+            pass
+    return os.getuid()
 
 
 def _kgx_exe() -> Path | None:
@@ -87,6 +98,22 @@ def _find_kgx_ancestor_pid(start: int | None = None) -> int | None:
     return None
 
 
+def _has_pc_test_kgx_for_uid(uid: int) -> bool:
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-u", str(uid), "-x", "kgx", "-a"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    for line in (proc.stdout or "").splitlines():
+        if "PC Test" in line or "hw-test" in line:
+            return True
+    return False
+
+
 def running_in_kgx() -> bool:
     """True when hw-test runs inside gnome-console (kgx)."""
     if os.environ.get(_KGX_ENV) == "1":
@@ -96,11 +123,23 @@ def running_in_kgx() -> bool:
     return _find_kgx_ancestor_pid() is not None
 
 
-def _pkill_pc_test_kgx() -> None:
+def _signal_kgx_pid(pid: int) -> None:
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            return
+        if sig == signal.SIGTERM:
+            time.sleep(0.3)
+            if not Path(f"/proc/{pid}").exists():
+                return
+
+
+def _pkill_pc_test_kgx(uid: int) -> None:
     """Last resort: close kgx window launched for hw-test by command line."""
     try:
         proc = subprocess.run(
-            ["pgrep", "-u", str(os.getuid()), "-x", "kgx", "-a"],
+            ["pgrep", "-u", str(uid), "-x", "kgx", "-a"],
             capture_output=True,
             text=True,
             check=False,
@@ -117,35 +156,18 @@ def _pkill_pc_test_kgx() -> None:
             pid = int(parts[0])
         except ValueError:
             continue
-        for sig in (signal.SIGTERM, signal.SIGKILL):
-            try:
-                os.kill(pid, sig)
-            except OSError:
-                break
-            if sig == signal.SIGTERM:
-                time.sleep(0.2)
-                if not Path(f"/proc/{pid}").exists():
-                    break
+        _signal_kgx_pid(pid)
         return
 
 
-def close_kgx_window() -> None:
-    """Close the parent kgx window (ALT Workstation: xvt alternative -> kgx)."""
+def close_kgx_window(*, uid: int | None = None) -> None:
+    """Close kgx hosting hw-test (works when hw-test runs as root via sudo)."""
+    target_uid = test_user_uid() if uid is None else uid
     pid = _find_kgx_ancestor_pid()
-    if pid is None:
-        _pkill_pc_test_kgx()
+    if pid is not None:
+        _signal_kgx_pid(pid)
         return
-    for sig in (signal.SIGTERM, signal.SIGKILL):
-        try:
-            os.kill(pid, sig)
-        except OSError:
-            _pkill_pc_test_kgx()
-            return
-        if sig == signal.SIGTERM:
-            time.sleep(0.3)
-            if not Path(f"/proc/{pid}").exists():
-                return
-    _pkill_pc_test_kgx()
+    _pkill_pc_test_kgx(target_uid)
 
 
 def read_key(*, abort_on_ctrl_c: bool = False) -> bool:
@@ -180,7 +202,8 @@ def read_key(*, abort_on_ctrl_c: bool = False) -> bool:
     return True
 
 
-def close_desktop_terminal_if_needed() -> None:
+def close_desktop_terminal_if_needed(*, uid: int | None = None) -> None:
     """Close gnome-console after pause_before_exit (kgx stays open otherwise)."""
-    if running_in_kgx():
-        close_kgx_window()
+    target_uid = test_user_uid() if uid is None else uid
+    if running_in_kgx() or _has_pc_test_kgx_for_uid(target_uid):
+        close_kgx_window(uid=target_uid)
