@@ -1,0 +1,16 @@
+[Unit]
+Description=Resume hw-test after reboot for user %i (headless)
+Documentation=file:/usr/share/doc/hw-test-doc/html/hw-test.html
+After=network-online.target
+ConditionPathExists=/home/%i/HW-TEST/STATE/STEP
+ConditionPathExists=/home/%i/HW-TEST/hw-test.log
+ConditionPathExists=/home/%i/HW-TEST/STATE/RESUME_ON_LOGIN
+
+[Service]
+Type=oneshot
+User=%i
+ExecStart=@bindir@/hw-test --continue --no-autorun
+StandardOutput=journal
+StandardError=journal
+
+# Started on user login via /etc/profile.d/hw-test-resume.sh (not at boot).

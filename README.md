@@ -1,204 +1,235 @@
-# HW-Test
+# HW-TEST
 
-Hardware compatibility testing tool for ALT Linux (based on Basalt SPo methodology).
+hw-test предназначена для упрощения и автоматизации прохождения тестирования
+оборудования на совместимость с ОС Альт по соответствующей методике. Текущая
+версия hw-test автоматизирует разделы методики: 5-10.1, 10.11, 11.1 и 11.2,
+а также доустанавливает пакеты, необходимые для всего процесса тестирования.
+Актуальную версию методики тестирования компьютеров всегда можно найти
+на [этой странице](https://www.basealt.ru/product-compatibility#c2278).
+Теперь она включена ещё и в состав пакета `hw-test-doc` в формате HTML5.
 
-## Features
+## Системные требования
 
-- **Hardware Detection**: Automatic detection of CPU, memory, storage, network, GPU, audio, USB devices, webcams, fingerprint readers, and more
-- **Express Tests**: Quick verification of boot time, system responsiveness, I/O performance, and network connectivity
-- **System Check**: OS version verification, package manager health, available updates, disk space monitoring
-- **Performance Benchmarks**: CPU, memory, disk I/O, and context switching performance
-- **Firmware Check**: BIOS/UEFI version detection, Secure Boot status, firmware updates via fwupd
-- **Log Collection**: Comprehensive log gathering and archiving for troubleshooting
-- **Reboot Support**: Automatic test continuation after system reboot
+hw-test поддерживает [регулярные сборки](https://www.altlinux.org/Regular)
+на основе Сизифа и [стартовые наборы](https://www.altlinux.org/Starterkits),
+а также [официально выпущенные](https://getalt.org/ru/) дистрибутивы
+[ООО «Базальт СПО»](https://www.basealt.ru/) на основе бранчей p9, p10, p11,
+c9f1, c9f2, c10f1 и c10f2, включая дистрибутивы «Альт СП», сертифицированные
+в ФСТЭК России, вплоть до Альт СП «релиз 10» (10.2.1).
 
-## Installation
+## Возможности hw-test
 
-### From source (development mode)
+* обновление ОС и установка пакетов из публичных Интернет репозиториев;
+* обновление ОС и установка пакетов из публичных архивов p9, p10, p11,
+  c9f2, c10f2 и Сизифа;
+* обновление ОС и установка пакетов с зеркала на подключаемом носителе;
+* обновление ОС и установка пакетов с зеркала в локальной сети;
+* автоматизировано переключение на требуемый репозиторий;
+* автоматизировано обновление ОС сразу после развёртывания;
+* поддерживаются специальные процедуры обновления Альт СП, вплоть до
+  Альт СП «релиз 10» (10.2.1);
+* автоматизирован сбор информации об ОС и оборудовании;
+* конфигурирование тестов в графическом и текстовом режимах;
+* имеется возможность доустановки графики на Альт СП Сервер «релиз 10»;
+* поддерживается пакетный режим запуска программы с полным отказом от
+  ручного конфигурирования и ввода данных (`--batch`);
+* полностью автоматизировано прохождение некоторых тестов;
+* имеется возможность повторно пройти ранее пройденный тест;
+* поддерживаются две локали: русская и англо-американская.
 
-```bash
-cd /workspace/hw_test
-pip install -e .
-```
+Программа не предназначена для обновления продуктовых систем с большим
+числом накопленных проблем. Нельзя гарантировать успех обновления во всех
+случаях для репозитория Сизиф ввиду его нестабильности. Например, процедура
+обновления не сможет выполнить переход на UsrMerge или автоматически решить
+проблемы файловых или пакетных конфликтов, если с этим не справился APT. См.:
 
-### Build distribution
+* https://www.altlinux.org/Usrmerge
+* https://www.altlinux.org/Branches/Sisyphus#Ошибки_обновления
 
-```bash
-pip install build
-python -m build
-```
+## Установка программы
 
-This creates source and wheel distributions in the `dist/` directory.
+Перед установкой программы нужно убедиться, что используется самая последняя
+версия RPM-пакета. Проверить и скачать самую актуальную версию можно здесь:
 
-## Usage
+https://packages.altlinux.org/ru/sisyphus/srpms/hw-test/rpms/
 
-### Basic usage
-
-```bash
-# Run all tests (will prompt for root password)
-hw-test --start
-
-# Run in batch mode (no interactive prompts)
-hw-test --start --batch
-
-# Run specific steps only
-hw-test --start --steps hardware_detection,express_test
-
-# Skip certain steps
-hw-test --start --skip performance,firmware_check
-
-# Set custom test name
-hw-test --start --name "Workstation-001"
-
-# Verbose output
-hw-test --start -v
-
-# Custom output directory
-hw-test --start --output-dir /tmp/hw-results
-```
-
-### List available steps
+Сразу после окончания установки ОС Альт (раздел 4 методики) и возможного
+применения необходимых воркэраундов из раздела 12.2 методики, программа
+устанавливается следующей командой:
 
 ```bash
-hw-test --list-steps
+$ su-
+# rpm -ivh [http://сервер]/путь/к/hw-test-версия-релиз.noarch.rpm
 ```
 
-### Show version
+При этом минимально необходимые зависимости, скорее всего, обеспечиваются
+чистой, только что установленной системой. Здесь важно, что, в отличии от
+традиционного подхода к установке пакетов в ОС Альт, нет необходимости
+предварительно настраивать репозиторий и обновлять индексы. Программа
+реализована на **Python 3** (ядро, шаги тестирования, GUI и экспресс-тест).
+Исходные bash-скрипты шагов удалены; Python-код — в `python3/hw_test/` (устанавливается в `%python3_sitelibdir`), l10n — в `usr/libexec/hw-test/l10n/`.
+RPM-пакет требует `python3`; остальные зависимости для тестов
+устанавливаются по ходу выполнения. В случае
+возникновения проблем можно воспользоваться вторым способом установки:
 
 ```bash
-hw-test --version
+$ su-
+# apt-get update
+# apt-get install [http://сервер]/путь/к/hw-test-версия-релиз.noarch.rpm
 ```
 
-## Authentication
+При таком варианте минимально необходимые зависимости будут доустановлены
+из подключенного репозитория установочного диска либо Интернет репозитория.
+Ещё один, более простой способ установки — из специального кармана:
 
-HW-Test uses `su -c` for privilege escalation instead of `sudo`. When you start a test:
-
-1. You will be prompted to enter the root password
-2. The password is verified and cached for the duration of the test
-3. All privileged commands are executed via `su -c`
-
-This approach:
-- Does not require sudo configuration
-- Works in environments where sudo is not available
-- Provides secure password handling with verification
-
-## Test Continuation After Reboot
-
-If a test step requires a reboot (e.g., after firmware update):
-
-1. The test state is saved to `/var/lib/hw-test/test_state.json`
-2. The system reboots
-3. After reboot, run the same command: `hw-test --start --name <test_name>`
-4. The test automatically resumes from where it left off
-
-## Available Test Steps
-
-| Step | Description | Requires Root | Corresponds to bash pc-test |
-|------|-------------|---------------|----------------------------|
-| `prepare` | System preparation (security checks, distro detection) | Yes | `prepare.sh` |
-| `upgrade` | System and kernel update | Yes | `upgrade.sh` |
-| `hardware_detection` | Detect all hardware components | Yes | `detect.sh` |
-| `config` | Define test plan and configuration | No | `config.sh` |
-| `firmware_check` | BIOS/UEFI and firmware updates | Yes | `fwupd.sh` |
-| `syslogs` | Check system logs for errors | Yes | `syslogs.sh` |
-| `express_test` | Quick functionality tests | No | `express.sh` |
-| `cpupower` | CPU frequency scaling test | Yes | `cpupower.sh` |
-| `diskperf` | Disk I/O performance test | Yes | `diskperf.sh` |
-| `glmark` | 3D graphics performance test | No | `glmark.sh` |
-| `system_check` | OS and package manager checks | Yes | - |
-| `performance` | Performance benchmarks | No | - |
-| `reboot_and_continue` | Reboot and continue testing | Yes | - |
-| `log_collection` | Collect logs and create archive | Yes | `collect.sh` |
-| `finalize` | Complete testing and create results | Yes | `finalize.sh` |
-
-**Note:** Package dependencies are specified in the RPM spec file. No runtime package installation is performed.
-
-## Architecture
-
-```
-hw_test/
-├── __init__.py          # Package initialization, version
-├── types.py             # Type definitions (TestConfig, HardwareInfo, StepResult)
-├── auth.py              # Root authentication via su -c
-├── state.py             # Test state management for reboot continuation
-├── cli.py               # Command-line interface
-└── steps/
-    ├── __init__.py      # Step registry and exports
-    ├── base.py          # BaseHWStep abstract class
-    ├── step_01_hardware_detection.py
-    ├── step_02_express_test.py
-    ├── step_03_system_check.py
-    ├── step_04_performance.py
-    ├── step_05_firmware_check.py
-    ├── step_06_log_collection.py
-    └── step_07_reboot.py
+```bash
+$ su-
+# apt-repo test 348515
 ```
 
-### Adding Custom Steps
+## Запуск программы
 
-1. Create a new file in `hw_test/steps/` (e.g., `step_08_custom.py`)
-2. Inherit from `BaseHWStep`:
+До запуска программы необходимо извлечь из компьютера все не относящиеся
+к тестированию носители информации, отключить другие устройства, которые
+не должны проходить тестирование по методике.
 
-```python
-from hw_test.steps.base import BaseHWStep
-from hw_test.types import StepResult, TestStatus
+Программу следует запускать под обычным пользователем, если он существует,
+чтобы иметь возможность выполнять тесты в сеансе обычного пользователя.
+В этом случае будет настроена `sudo` для выполнения операций, требующих
+привелегий `root`. Программу следует запускать в эмуляторе терминала
+графического сеанса, при его доступности, а если графика не установлена,
+тогда уже в текстовом терминале. При запуске программы под пользователем
+`root` или в текстовом терминале, число охвачиваемых тестов уменьшается,
+не пройденные тесты блокируются.
 
-class CustomStep(BaseHWStep):
-    name = "Custom Test"
-    description = "My custom test step"
-    requires_root = False
-
-    def execute(self) -> StepResult:
-        # Your test logic here
-        return StepResult(
-            step_name=self.name,
-            status=TestStatus.PASSED,
-            message="Custom test completed"
-        )
+```bash
+$ hw-test
 ```
 
-3. Register in `hw_test/steps/__init__.py`
+После выполнения некоторых операций, таких, как обновление ядра или фирменной
+прошивки, компьютер перезагружается, хотя тестирование ещё не было завершено.
+При работе в **графическом сеансе** hw-test будет запускаться автоматически
+(файл `~/.config/autostart/hw-test.desktop`) до окончания первой фазы тестирования.
 
-## Configuration
+На **системах без графики** (ALT Server, виртуальная машина по SSH) автопродолжение
+выполняется через systemd unit **`hw-test-resume@<пользователь>.service`**
+(запуск на `multi-user.target`, без входа в систему и без графического сеанса).
+После reboot выполняется `hw-test --continue --batch --no-autorun`, если существует
+`~/HW-TEST/STATE/STEP`. По умолчанию режим включён автоматически (`headless_autorun`
+в конфиге не задан); для отключения укажите `headless_autorun=0` в `/etc/hw-test.conf`.
 
-Default paths:
-- Data directory: `/var/lib/hw-test`
-- Log directory: `/var/lib/hw-test/logs`
-- Config directory: `/etc/hw-test`
-- State file: `/var/lib/hw-test/test_state.json`
+Рекомендуемый запуск на сервере:
 
-Environment variables:
-- `HWTEST_DATA_DIR`: Override data directory
-- `HWTEST_LOG_LEVEL`: Set logging level (DEBUG, INFO, WARNING, ERROR)
+```bash
+$ hw-test --batch --start
+```
 
-## Output
+Если автопродолжение не сработало, вручную:
 
-Results are displayed in the console and logged. The `log_collection` step creates a compressed archive containing:
-- System logs (syslog, messages, kern.log, etc.)
-- Command outputs (dmesg, lspci, lsusb, etc.)
-- Hardware information from sysfs
-- Summary JSON file
+```bash
+$ hw-test --batch --continue
+```
 
-Archive naming: `hw-test_<name>_<timestamp>.tar.gz`
+Проверка (от root):
 
-## Requirements
+```bash
+systemctl status hw-test-resume@test.service
+journalctl -u hw-test-resume@test.service
+less -r ~/HW-TEST/hw-test.log
+```
 
-- Python 3.8+
-- psutil
-- py-cpuinfo
-- packaging
+Если автозапуск в графическом сеансе не срабатывает ожидаемым образом, т.е.
+после очередной перезагрузки окно эмулятора терминала с hw-test не появляется,
+а в журнале есть фатальная ошибка, следует использовать ключ `--no-autorun`,
+который запретит автозапуск. Для возобновления тестирования после такой ошибки
+запустите вручную hw-test с ключом `--continue` (`-C`) из эмулятора терминала.
 
-Optional dependencies (for full functionality):
-- dmidecode
-- fwupd
-- ipmitool
-- v4l2-ctl
+В случае крупного обновления в графическом сеансе, если вдруг закроется окно
+эмулятора терминала или произойдёт выход из сеанса пользователя, достаточно
+возобновить тестирование с той же точки, запустив hw-test с ключом `--continue`
+(`-C`). Такое замечено, например, в среде KDE Plasma при нехватке памяти.
 
-## License
+После тестирования вручную по разделам 10 и 11.3 методки, нужно запустить
+hw-test ещё раз с параметром `--finish` (`-F`). При этом выполняется финальная
+стадия сборки журналов (раздел 10.11 методики), а в домашнем каталоге текущего
+пользователя создаётся архив вида `hw-test-ГГГГ-ММ-ДД.tar` с результатами
+тестирования. При наличии каталога или символьной ссылки `/mnt/hw-test`, архив
+переносится в этот каталог под именем `/mnt/hw-test/<ИМЯ_ТЕСТА>-ГГГГ-ММ-ДД.tar`,
+где `ИМЯ_ТЕСТА` определяется автоматически и может изменяться через командную
+строку параметром `--name` (`-n`). Дата начала тестирования также может быть
+изменена параметром `--date` (`-d`), причём данный параметр предписывает
+использовать ещё и архив публичного репозитория на заданную дату.
 
-GPL-3.0
+На подкаталог с результатами тестирования указывает символьная ссылка `HW-TEST`
+в домашнем каталоге пользователя. Результаты ручного тестирования можно также
+складывать в подкаталог `HW-TEST`. Журнал тестирования можно посмотреть такой
+командой:
 
-## Authors
+```bash
+$ less -r ~/HW-TEST/hw-test.log
+```
 
-Based on pc-test by Basalt SPo Team.
-Rewritten in Python as hw-test.
+## Прохождение экспресс-теста
+
+При наличии одновременно одного проводного сетевого адаптера и одного
+беспроводного, нужно настроить и проверить работу Wi-Fi, затем подключить
+сетевой кабель и убедиться, что работает проводная сеть. Также необходимо
+предварительно настроить браузер на обычную работу — все вкладки закрыты,
+при запуске не задаётся вопросов про настройку бумажника, восстановление
+сеанса, итп. Если заведомо известно, что не работает «спящий» или «ждущий»
+режим, его необходимо заблаговременно замаскировать: `systemctl mask
+{suspend|hibernate}.target`, иначе экспресс-тест будет провален. Только
+после этого запускается hw-test.
+
+Когда дойдёте до раздела 9, компьютер будет выключен. Предлагается на
+этом месте включить видеозапись происходящего. Очень важно дальше ничего
+не нажимать, ничего не трогать и не двигать, если конкретных действий не
+будет предложено выполнить вручную, так как экспресс-тест теперь полностью
+автоматизирован. В самом конце этого теста, до перезагрузки, даётся 40 секунд
+на ручную демонстрацию работы функциональных клавиш, других аудио и видео
+устройств вывода. Видеозапись следует выключить сразу после завершения работы
+ОС, когда компьютер уходит на перезагрузку.
+
+Браузер выбирается автоматически единственный имеющийся или предпочитаемый.
+Видео для воспроизведения выбирается случайным образом из более 135 сэмплов.
+В файле конфигурации можно определить собственный сэмпл (`local_video_sample`)
+либо выбрать один из наборов видео (`express_video_set`): youtube, rutube,
+vkvideo или определённый пользователем.
+
+## Тонкая настройка
+
+Для массового тестирования однотипных компьютеров, одного компьютера с разными
+дистрибутивами ОС Альт, для использования локального зеркала репозитория, для
+определения собственной цветовой палитры и других параметров, можно определить
+свою конфигурацию в `/etc/hw-test.conf`, детали есть в комментариях внутри
+этого файла. Данный файл конфигурации не заменяется при установке пакета.
+
+В конфиге `/etc/hw-test-<VSET>.txt` можно определить собственный набор коротких
+ссылок на видео «VSET» в таком же формате, как `/var/lib/hw-test/youtube.txt`,
+а в конфиге `/etc/hw-test-RVSETS.txt` переопределить шаблоны полных ссылок на
+видео, как в файле `/var/lib/hw-test/rvsets.txt`.
+
+Конфигурационные файлы с такими же именами могут размещаться в домашнем каталоге
+пользователя (`~/.config/hw-test-<VSET>.txt` и `~/.config/hw-test-RVSETS.txt`),
+им отдаётся предпочтение при наличии, но конфиг `~/.config/hw-test.conf` всегда
+используется вместе с глобальной конфигурацией.
+
+## Внешний вид
+
+![07](img/07.png "Тестирование завершено, Регулярная сборка на Сизифе")
+
+[Другие скриншоты работы с программой](img/pictures.md).
+
+## Получение справки
+
+```bash
+$ hw-test --help
+```
+
+Обратите внимание: локаль и ключи запуска программы определяются только в
+самом начале тестирования. При последующих запусках hw-test менять локаль
+и другие опции бесполезно.
+
+Сообщайте об ошибках на https://bugzilla.altlinux.org/
+
+Удачного тестирования! ;-)

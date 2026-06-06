@@ -1,190 +1,276 @@
-%define _unpackaged_files_terminate_build 0
+%define _unpackaged_files_terminate_build 1
 %define mod_name hw_test
-%def_with check
+
+%ifarch %ix86 %e2k %mips riscv64
+%def_disable check
+%endif
 
 Name: hw-test
-Version: 2.0.0
-Release: alt4
-Summary: Hardware compatibility testing tool for ALT Linux
-Summary(ru-RU): Инструмент тестирования оборудования для ALT Linux
-Group: System/Configuration/Other
-License: GPLv3+
-Url: https://github.com/zerospirit79/hw-test
+Version: 2.2.0
+Release: alt17
 
-Source: %name-%version.tar
-#Patch: %name-%version-alt.patch
+Summary: Hardware compatibility testing tool for ALT Linux
+Summary(ru_RU): Инструмент тестирования оборудования для ALT Linux
+Group: System/Configuration/Hardware
+License: GPLv3+
+
 BuildArch: noarch
 
-# Python dependencies
+Url: https://github.com/zerospirit79/hw-test
+Source: %name-%version.tar
+AutoReqProv: no
+AutoReq: noshell, noshebang
+
 BuildRequires(pre): rpm-build-python3
 BuildRequires: python3(setuptools)
 BuildRequires: python3(wheel)
-BuildRequires: python3(black)
+%{!?_disable_check:BuildRequires: shellcheck}
+%{!?_disable_check:BuildRequires: python3-module-ruff}
 
-Requires: python3 >= 3.8
+# Python runtime (see also pyproject.toml)
+Requires: python3 >= 3.9
+Requires: python3-base
 Requires: python3-module-psutil >= 5.9.0
 Requires: python3-module-py-cpuinfo >= 9.0.0
 Requires: python3-module-packaging >= 21.0
 Requires: python3-module-pexpect >= 4.8.0
 
-# Test dependencies
-%if_with check
-BuildRequires: python3(pytest)
-BuildRequires: python3(pytest-cov)
-BuildRequires: python3(pytest-mock)
-%endif
+# Core system (pc-test methodology)
+Requires: coreutils util-linux rpm apt apt-repo su sudo
+Requires: bash update-kernel pciutils usbutils iproute2
 
-# System tools required for hardware detection
-Requires: dmidecode 
-Requires: sos 
-Requires: system-report 
-Requires: acpica 
-Requires: dmidecode 
+# Hardware detection and logs
+Requires: dmidecode
+Requires: sos
+Requires: system-report
+Requires: acpica
 Requires: lsscsi
 Requires: lshw
 Requires: inxi
-Requires: pciutils
-Requires: usbutils
 Requires: hdparm
 Requires: smartmontools
 Requires: stress-ng
 Requires: cpupower
 Requires: sysfsutils
 
-# Network tools
+# Network
 Requires: iputils
 Requires: iperf3
 Requires: iw
 Requires: ethtool
 
-# Firmware update (optional but recommended)
-Requires: fwupd
-
-# Graphics testing
-Requires: glmark2
-Requires: mesa-dri-drivers
-
-# Audio testing
-Requires: alsa-utils
-Requires: pulseaudio-utils
-
-# Disk testing
-Requires: fio
-
-# System tools
-Requires: systemd-utils
-Requires: jq
-Requires: gzip
-Requires: numactl
-
-# GUI tools (optional, for interactive mode)
-Requires: yad
-Requires: xdg-utils
-Requires: yad
-Requires: notify-send
-
-# For server/headless systems (optional)
-Requires: dialog
-
-# Video recording for express test (required for certification)
-Requires: ffmpeg
-
-# Bluetooth testing (optional)
-Requires: bluez-tools
-
-# Input testing (optional)
-Requires: libinput-tools
-Requires: evtest
-
-# IPMI/BMC management (optional, for servers)
-Requires: ipmitool
-
-# Smart card support (optional)
-Requires: pcsc-lite
-Requires: pcsc-tools
-
-%py3_provides %name
+# Optional methodology components (installed on demand when possible)
+#Requires: fwupd
+#Requires: glmark2
+#Requires: mesa-dri-drivers
+#Requires: alsa-utils
+#Requires: pulseaudio-utils
+#Requires: fio
+#Requires: systemd-utils
+#Requires: jq
+#Requires: gzip
+#Requires: numactl
+#Requires: yad
+#Requires: xdg-utils
+#Requires: notify-send
+#Requires: dialog
+#Requires: ffmpeg
+#Requires: bluez-tools
+#Requires: libinput-tools
+#Requires: evtest
+#Requires: ipmitool
+#Requires: pcsc-lite
+#Requires: pcsc-tools
 
 %description
-hw-test is a comprehensive hardware compatibility testing tool for ALT Linux.
-It performs automated tests on CPU, memory, disk, network, graphics, audio,
-and other hardware components.
-
-Features:
-- Hardware detection and cataloging
-- System preparation and update
-- Performance benchmarks (CPU, disk, graphics)
-- Firmware update checks
-- Express tests for quick validation
-- Comprehensive log collection
-- Test continuation after reboot
+hw-test is a hardware compatibility testing tool for ALT Linux, based on
+the pc-test suite and Basalt SPo methodology. It performs automated tests
+on CPU, memory, disk, network, graphics, audio, and other hardware
+components with support for express testing, log collection, and resuming
+after reboot.
 
 %description -l ru_RU
-hw-test — это комплексный инструмент тестирования совместимости оборудования
-для ALT Linux. Он выполняет автоматизированные тесты процессора, памяти,
-дисков, сети, графики, аудио и других компонентов оборудования.
+hw-test — инструмент тестирования совместимости оборудования для ALT Linux
+на базе pc-test и методики Basalt SPo. Выполняет автоматизированные тесты
+процессора, памяти, дисков, сети, графики, аудио и других компонентов,
+включая экспресс-тест, сбор журналов и продолжение после перезагрузки.
 
-Возможности:
-- Определение и каталогизация оборудования (CPU, память, диски, сеть, GPU, аудио, USB, NUMA, IPMI)
-- Подготовка и обновление системы
-- Тесты производительности (CPU, диск, графика)
-- Проверка обновлений прошивок
-- Экспресс-тесты для быстрой проверки (время загрузки, отзывчивость, I/O, сеть, Wi-Fi, аудио, спящий режим, функциональные клавиши)
-- Комплексный сбор журналов
-- Продолжение теста после перезагрузки
-- Видеозапись для сертификации
-- Проверка Bluetooth, веб-камер, сканеров отпечатков, смарт-карт
+%package doc
+Summary: HW Test Suite documentation
+Summary(ru_RU): Документация hw-test
+Group: Documentation
+BuildArch: noarch
+AutoReqProv: no
+AutoReq: noshell, noshebang
+
+%description doc
+Documentation and screenshots for HW Test Suite, including the compatibility
+testing methodology in HTML5 format.
+
+%description -l ru_RU doc
+Документация и скриншоты для hw-test, включая методику тестирования
+совместимости в формате HTML5.
 
 %prep
-%setup
+%setup -q
 %autopatch -p1
 
 %build
-%pyproject_build
+chmod 0755 usr/bin/%name \
+	    usr/libexec/%name/resume.py \
+	    usr/libexec/%name/resume.sh \
+	    usr/libexec/%name/launcher.py \
+	    usr/libexec/%name/launcher.sh
+touch etc/%name-RVSETS.txt
+cat >"./python3/hw_test/version.py" <<EOF
+# Auto-generated by the build system, do not edit directly!
+HWTEST_VERSION = "%version"
+HWTEST_BUILD_DATE = "$(date '+%%Y%%m%%d')"
+EOF
 
 %install
-%pyproject_install
+mkdir -p -m 0755 -- "%buildroot"
+mkdir -p -m 0755 -- "%buildroot%python3_sitelibdir"
+cp -a python3/hw_test "%buildroot%python3_sitelibdir/"
+mkdir -p -m 0755 -- "%buildroot%_libexecdir/%name"
+cp -a usr/libexec/%name/l10n "%buildroot%_libexecdir/%name/"
+install -m 0755 usr/libexec/%name/launcher.py "%buildroot%_libexecdir/%name/"
+install -m 0755 usr/libexec/%name/launcher.sh "%buildroot%_libexecdir/%name/"
+install -m 0755 usr/libexec/%name/resume.py "%buildroot%_libexecdir/%name/"
+install -m 0755 usr/libexec/%name/resume.sh "%buildroot%_libexecdir/%name/"
+mkdir -p -m 0755 -- "%buildroot%_bindir"
+install -m 0755 usr/bin/%name "%buildroot%_bindir/%name"
+mkdir -p -m 0755 -- "%buildroot%_datadir/applications"
+sed "s|@hw_test_libdir@|%_libexecdir/%name|g" usr/share/applications/%name.desktop \
+	> "%buildroot%_datadir/applications/%name.desktop"
+sed "s|@hw_test_libdir@|%_libexecdir/%name|g" usr/share/applications/%name-autostart.desktop \
+	> "%buildroot%_datadir/applications/%name-autostart.desktop"
+chmod 0644 "%buildroot%_datadir/applications/%name.desktop" \
+	"%buildroot%_datadir/applications/%name-autostart.desktop"
+mkdir -p -m 0755 -- "%buildroot%_sysconfdir"
+install -m 0644 etc/%name.conf "%buildroot%_sysconfdir/%name.conf"
+install -m 0644 etc/%name-RVSETS.txt "%buildroot%_sysconfdir/%name-RVSETS.txt"
+mkdir -p -m 0755 -- "%buildroot/etc/profile.d"
+install -m 0644 etc/profile.d/hw-test-resume.sh "%buildroot/etc/profile.d/hw-test-resume.sh"
+mkdir -p -m 0755 -- "%buildroot%_localstatedir/%name"
+cp -a var/lib/%name/. "%buildroot%_localstatedir/%name/"
+mkdir -p -m 0755 -- "%buildroot/usr/lib/systemd/system"
+sed "s|@bindir@|%_bindir|g" usr/lib/systemd/system/%name-resume@.service \
+	> "%buildroot/usr/lib/systemd/system/%name-resume@.service"
+chmod 0644 "%buildroot/usr/lib/systemd/system/%name-resume@.service"
 
-# Install configuration file
-install -d %buildroot/etc/hw-test
-install -m 644 etc/hw-test.conf.example %buildroot/etc/hw-test.conf
-
-# Install launcher scripts
-install -d %buildroot%_libexecdir/%name
-install -m 755 usr/libexec/%name/launcher.sh %buildroot%_libexecdir/%name/
-install -m 755 usr/libexec/%name/resume.sh %buildroot%_libexecdir/%name/
-install -m 644 usr/libexec/%name/hw-test-resume.desktop %buildroot%_libexecdir/%name/
-
-# Install desktop file
-mkdir -p %buildroot%_desktopdir/
-install -Dm 644 usr/share/applications/%name.desktop %buildroot%_desktopdir/
-
-install -d %buildroot/var/lib/hw-test
-chmod 755 %buildroot/var/lib/hw-test
-install -d %buildroot/var/lib/hw-test/logs
-chmod 755 %buildroot/var/lib/hw-test/logs
-install -d %buildroot/var/log/hw-test
-chmod 755 %buildroot/var/log/hw-test
-install -Dm 755 usr/share/applications/%name.desktop %buildroot%_desktopdir/
+%post
+rm -rf %_libexecdir/%name/hw_test 2>/dev/null ||:
+if [ -d %_libexecdir/%name ] && [ %_libexecdir != /usr/libexec ] && [ ! -e /usr/libexec/%name ]; then
+	mkdir -p /usr/libexec 2>/dev/null || true
+	ln -snf %_libexecdir/%name /usr/libexec/%name 2>/dev/null || true
+fi
+if [ -f %_datadir/applications/%name-autostart.desktop ]; then
+	for homedir in /home/*; do
+		[ -d "$homedir" ] || continue
+		user="$(basename "$homedir")"
+		getent passwd "$user" >/dev/null 2>&1 || continue
+		lastdir="$homedir/HW-TEST"
+		[ -L "$lastdir" ] || continue
+		[ -s "$lastdir/STATE/STEP" ] || continue
+		mkdir -p "$homedir/.config/autostart"
+		chown "$user:$user" "$homedir/.config/autostart" 2>/dev/null || true
+		if [ -d "$homedir/.config" ] && [ "$(stat -c '%U' "$homedir/.config")" = root ]; then
+			chown "$user:$user" "$homedir/.config" 2>/dev/null || true
+		fi
+		cp -f %_datadir/applications/%name-autostart.desktop \
+			"$homedir/.config/autostart/%name.desktop"
+		chown "$user:$user" "$homedir/.config/autostart/%name.desktop"
+		chmod 0644 "$homedir/.config/autostart/%name.desktop"
+	done
+fi
+a="^(# Allow \\w+ to execute) %_bindir/%name without a password$"
+b="\\1 %name and dmesg"
+sed -i -E "s|$a|$b|g" /etc/sudoers
+a="^(\\w+ ALL=\\(ALL:ALL\\) NOPASSWD: %_bindir/%name)$"
+b="\\1,$(which dmesg)"
+sed -i -E "s|$a|$b|g" /etc/sudoers
 
 %check
-%pyproject_run_pytest
+./check-scripts.sh
 
 %files
-%doc README.md
-%config(noreplace) /etc/hw-test.conf
-%_localstatedir/%name
-%_localstatedir/%name/logs
-%_logdir/%name
+%_sysconfdir/%name.conf
+%config(noreplace) %ghost %_sysconfdir/%name-RVSETS.txt
+/etc/profile.d/hw-test-resume.sh
 %_bindir/%name
-%_desktopdir/%name.desktop
-%_libexecdir/%name/launcher.sh
-%_libexecdir/%name/resume.sh
-%_libexecdir/%name/hw-test-resume.desktop
-%python3_sitelibdir/%mod_name/
-%python3_sitelibdir/%{pyproject_distinfo %mod_name}/
+%python3_sitelibdir/hw_test
+%_libexecdir/%name
+%_datadir/applications/%name.desktop
+%_datadir/applications/%name-autostart.desktop
+%_localstatedir/%name
+/usr/lib/systemd/system/%name-resume@.service
+
+%files doc
+%doc img html CHANGELOG.md LICENSE README.md
 
 %changelog
-* Mon Mar 30 2026 Pavel Shilov <zerospirit@altlinux.org> 2.0.0-alt4
-- Initial build for Sisyphus.
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt17
+- Fixed: close gnome-console after pause (HW_TEST_KGX=1, TERM_PROGRAM, SIGKILL fallback).
 
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt16
+- Fixed: close gnome-console (kgx) after pause on Workstation 11 (#53388);
+  ignore xvt alternative when it symlinks to kgx.
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt15
+- Fixed: express brightness on Wayland (sysfs/brightnessctl/D-Bus, xrandr fallback).
+- Fixed: pause before exit only for --desktop-icon (match pc-test; #53388).
+- Fixed: prefer xvt/gnome-terminal over kgx for GNOME terminal launch (#53388).
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt14
+- Fixed: yad form buttons use LABEL,ICON,TOOLTIP (match pc-test step-gui.sh on ALT yad 13).
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt13
+- Fixed: express manual form yad buttons (LABEL!ICON!TOOLTIP:ID); dialog sizing/wrap.
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt12
+- Fixed: headless resume runs on user login (profile.d), not at boot from multi-user.target.
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt11
+- Fixed: fio/v3d/fwupd optional tests no longer auto-enabled on detect (match pc-test);
+  diskperf runs only when selected in step 5.4.
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt10
+- Fixed: dialog test plan form (capture_output broke TUI; match config-form-tui.sh).
+- Fixed: openvt config on headless server runs via sudo hw-test --continue-on-vt (root).
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt9
+- Fixed: PermissionError removing ~/.config/autostart/hw-test.desktop at test end
+  (root-owned autostart dir from %%post; cleanup via sudo --cleanup-resume).
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt8
+- Fixed: step 5.4 shows dialog TUI in terminal (not SKIPPED with TTY or on tty1).
+- Changed: headless resume no longer uses --batch; config opens on console via openvt.
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt7
+- Fixed: batch resume no longer stops before step 5.4 (skip config, continue as root).
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt6
+- Fixed: --batch not overridden by settings.ini; config skipped without TTY
+  (systemd resume no longer fails on dialog).
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt5
+- Fixed: hw-test-resume@.service uses User=%%i instead of /usr/bin/runuser (RPM install).
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt4
+- Fixed: headless resume uses system unit hw-test-resume@user.service (no linger).
+- Fixed: --auto launch mode follows HW-TEST symlink like --continue.
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt3
+- Added: headless resume via systemd user unit hw-test-resume.service.
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt2
+- Added: hw-test-doc subpackage (methodology HTML5, screenshots, README).
+
+* Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt1
+- Rebased on pc-test 2.2.0 Python codebase (hw_test package).
+- Updated spec install layout and check-scripts (ruff, unittest).
+- pyproject.toml: runtime deps from spec (psutil, py-cpuinfo, etc.).
+
+* Mon Mar 30 2026 Pavel Shilov <zerospirit@altlinux.org> 2.0.0-alt4
+- Initial build for Sisyphus (legacy standalone Python steps).

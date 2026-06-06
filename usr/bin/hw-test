@@ -1,0 +1,15 @@
+#!/usr/bin/python3
+# Copyright (C) 2024-2026, ALT Linux Team
+# GNU General Public License v3+
+"""hw-test entry point."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+if __name__ == "__main__":
+    sys.argv[0] = str(Path(__file__).resolve())
+    from hw_test.main import main
+
+    main()

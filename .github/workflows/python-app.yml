@@ -1,13 +1,12 @@
-# This workflow will install Python dependencies, run tests and lint
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+# This workflow validates hw-test (pc-test based Python layout).
 
 name: Python application
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: ["main", "develop"]
   pull_request:
-    branches: [ "main", "develop" ]
+    branches: ["main", "develop"]
 
 permissions:
   contents: read
@@ -18,94 +17,42 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'pip'
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[test]"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
 
-    - name: Lint with flake8
-      run: |
-        pip install flake8
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: Run check-scripts.sh
+        run: ./check-scripts.sh
 
-    - name: Check code style with black
-      run: |
-        pip install --no-cache-dir black==24.3.0
-        black --check --diff --target-version py38 --target-version py39 --target-version py310 --target-version py311 --target-version py312 hw_test/ tests/
-
-    - name: Run tests with pytest
-      run: |
-        pytest --cov=hw_test --cov-report=term-missing --cov-report=xml
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        files: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
-
-  build:
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build
-
-    - name: Build source distribution
-      run: python -m build --sdist
-
-    - name: Build wheel distribution
-      run: python -m build --wheel
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: dist
-        path: dist/
+      - name: Run unit tests
+        env:
+          PYTHONPATH: python3
+        run: |
+          python -m unittest discover -s tests -p 'test_*.py' -v
 
   check-spec:
     runs-on: ubuntu-latest
     needs: test
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Check spec file syntax
-      run: |
-        # Basic syntax check for RPM spec file
-        if [ -f .gear/hw-test.spec ]; then
-          echo "Spec file exists"
-          # Check for required fields
-          grep -q "^Name:" .gear/hw-test.spec
-          grep -q "^Version:" .gear/hw-test.spec
-          grep -q "^Release:" .gear/hw-test.spec
-          grep -q "^Summary:" .gear/hw-test.spec
-          echo "Spec file contains required fields"
-        else
-          echo "Warning: .gear/hw-test.spec not found"
-        fi
+      - name: Check spec file syntax
+        run: |
+          test -f .gear/hw-test.spec
+          grep -q '^Name:' .gear/hw-test.spec
+          grep -q '^Version:' .gear/hw-test.spec
+          grep -q '^Release:' .gear/hw-test.spec
+          grep -q '^Summary:' .gear/hw-test.spec
