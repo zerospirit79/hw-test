@@ -1,4 +1,8 @@
-"""Load /etc/hw-test.conf and user overrides."""
+"""Загрузка /etc/hw-test.conf, ~/.config/hw-test.conf и STATE/settings.ini.
+
+Формат: key=value, комментарии с #, списки в скобках (local_media_labels).
+Неизвестные ключи игнорируются; применяются только атрибуты RuntimeContext.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,17 @@
-"""Runtime context and helpers shared by hw-test steps."""
+"""Глобальный контекст выполнения и вспомогательные функции для шагов.
+
+RuntimeContext хранит настройки, пути и состояние прогона. Большинство флагов —
+строки "" / "1" для совместимости с bash и settings.ini (см. internal_vars).
+
+Основные группы атрибутов:
+  - обновление ОС: update_apt_lists, dist_upgrade, update_kernel
+  - дистрибутив: distro, repo, have_altsp, have_systemd
+  - графика: have_xorg, have_kde5, …
+  - опциональные тесты: xprss_test, fio_test, v3d_test, … (выставляет detect)
+  - пути: workdir, logfile, libdir
+
+Методы spawn/spawn_capture — обёртки subprocess с записью в hw-test.log.
+"""
 
 from __future__ import annotations
 
@@ -39,7 +52,10 @@ class FatalError(SystemExit):
 
 
 class RuntimeContext:
-    """Global runtime state and shell-compatible helpers."""
+    """Состояние одного прогона hw-test и shell-совместимые хелперы.
+
+    Создаётся в main(), доступен шагам через get_context() или self.ctx.
+    """
 
     update_apt_lists: Optional[str] = "1"
     dist_upgrade: Optional[str] = "1"

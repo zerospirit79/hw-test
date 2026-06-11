@@ -116,6 +116,7 @@ testing methodology in HTML5 format.
 %autopatch -p1
 
 %build
+%pyproject_build
 chmod 0755 usr/bin/%name \
 	    usr/libexec/%name/resume.py \
 	    usr/libexec/%name/resume.sh \
@@ -129,6 +130,7 @@ HWTEST_BUILD_DATE = "$(date '+%%Y%%m%%d')"
 EOF
 
 %install
+%pyproject_install
 mkdir -p -m 0755 -- "%buildroot"
 mkdir -p -m 0755 -- "%buildroot%python3_sitelibdir"
 cp -a python3/hw_test "%buildroot%python3_sitelibdir/"

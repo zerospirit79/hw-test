@@ -1,4 +1,14 @@
-"""Base class and registry for hw-test steps."""
+"""Базовый класс шага и реестр модулей steps/.
+
+Жизненный цикл одного шага в run_main_loop():
+  1. create_step(STEP_ID) — экземпляр из REGISTRY
+  2. pre() → TEST_ALLOWED | TEST_SKIPPED | TEST_BLOCKED
+  3. testcase() → TEST_PASSED | TEST_FAILED
+  4. log_step_result() → show_results() + draw_title_line()
+  5. have_next_step() — удаляет строку из плана, пишет STATE/STEP
+
+Регистрация: @register_step на подклассе StepBase; модуль импортируется в steps/__init__.py.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +19,7 @@ from hw_test.context import RuntimeContext, get_context
 
 
 class StepBase:
-    """Python port of a bash step script (number, names, pre, testcase)."""
+    """Один шаг методики: номер, названия, pre/testcase/show_results."""
 
     STEP_ID: str = ""
     number: str = ""

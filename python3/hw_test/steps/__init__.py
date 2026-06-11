@@ -1,6 +1,13 @@
-"""Step registry — import all step modules to register them."""
+"""Реестр шагов — импорт модулей регистрирует их в REGISTRY.
 
-# Import side-effect: registers each step in REGISTRY
+Порядок в плане (var/lib/hw-test/start.txt), не порядок импорта:
+  prepare (5.1) → upgrade → detect (5.3) → config (5.4) → install →
+  fwupd → syslogs (7) → collect (8) → express (9) → cpupower (10.1)
+
+Финальная фаза (finish.txt): diskperf (11.1) → glmark (11.2) → finalize (10.11)
+"""
+
+# Импорт с побочным эффектом: @register_step заполняет REGISTRY
 from hw_test.steps import (  # noqa: F401
     collect,
     config,

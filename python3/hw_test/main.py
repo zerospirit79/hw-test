@@ -1,9 +1,14 @@
-"""hw-test main entry and test runner loop."""
+"""Точка входа hw-test и главный цикл выполнения шагов.
+
+Поток выполнения:
+  main() → resolve_launch_mode() → start_new_run() / resume → run_main_loop() → _final_message()
+
+Подробнее о структуре пакета и добавлении шагов — python3/hw_test/README.md.
+"""
 
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -14,18 +19,18 @@ from pathlib import Path
 
 from hw_test import cli
 from hw_test.config_loader import SETTINGS_INI_SKIP_KEYS, load_config_files
-from hw_test.constants import (
-    TEST_ALLOWED,
-    TEST_PASSED,
-    TEST_RUNNING,
-    TEST_SKIPPED,
-)
+from hw_test.constants import TEST_ALLOWED, TEST_PASSED, TEST_RUNNING
 from hw_test.context import FatalError, RuntimeContext, get_context, graphical_session, set_context
+from hw_test.launch_mode import resolve_launch_mode, start_new_run
 from hw_test.paths import PROGNAME, libexec_dir
 from hw_test.resume_autorun import clear_resume_autorun, setup_resume_autorun
 from hw_test.steps import create_step, list_steps
 from hw_test.terminal import close_desktop_terminal_if_needed, read_key, test_user_uid
+from hw_test.user_handoff import handoff_to_user_session, step_needs_user_handoff
 from hw_test.version import HWTEST_VERSION
+
+
+# --- Инициализация окружения ---
 
 
 def _resolve_install_paths(ctx: RuntimeContext) -> None:
@@ -132,365 +137,7 @@ def restart_as_root(ctx: RuntimeContext) -> None:
         print(f"{ctx.CLR_ERR}su failed (attempt {try_no}/3).{ctx.CLR_NORM}\n", flush=True)
 
 
-def _workdir_has_retest_data(workdir: Path) -> bool:
-    return (workdir / "RESULTS").is_file() or (workdir / "STATE" / "RESULTS").is_file()
-
-
-def _workdir_has_retest_settings(workdir: Path) -> bool:
-    return (workdir / "settings.ini").is_file() or (workdir / "STATE" / "settings.ini").is_file()
-
-
-def resolve_launch_mode(ctx: RuntimeContext) -> None:
-    home = ctx.homedir or os.environ.get("HOME", "")
-    lastdir = Path(home) / "HW-TEST"
-
-    if ctx.launchmode == "auto":
-        if (
-            lastdir.is_symlink()
-            and (lastdir / f"{ctx.progname}.log").is_file()
-            and (lastdir / "STATE" / "start.txt").is_file()
-        ):
-            wd = lastdir.resolve()
-            step_path = lastdir / "STATE" / "STEP"
-            if step_path.is_file() and step_path.stat().st_size:
-                ctx.workdir = str(wd)
-                ctx.launchmode = "continue"
-            elif (
-                not step_path.exists()
-                and not (lastdir / "STATE" / "start.txt").read_text().strip()
-                and not (lastdir / "STATE" / "finish.txt").exists()
-            ):
-                ctx.workdir = str(wd)
-                ctx.launchmode = "finish"
-            else:
-                ctx.launchmode = "start"
-        else:
-            ctx.launchmode = "start"
-        return
-
-    if ctx.launchmode == "continue":
-        if (
-            lastdir.is_symlink()
-            and (lastdir / f"{ctx.progname}.log").is_file()
-            and (lastdir / "STATE" / "start.txt").is_file()
-        ):
-            step_path = lastdir / "STATE" / "STEP"
-            start_empty = not (lastdir / "STATE" / "start.txt").read_text().strip()
-            finish_staged = (lastdir / "STATE" / "finish.txt").exists()
-            if step_path.is_file() and step_path.stat().st_size:
-                ctx.workdir = str(lastdir.resolve())
-            elif start_empty and not finish_staged:
-                ctx.workdir = str(lastdir.resolve())
-            else:
-                ctx.usertype = "continue"
-                ctx.launchmode = "start"
-        else:
-            ctx.usertype = "continue"
-            ctx.launchmode = "start"
-        return
-
-    if ctx.launchmode == "finish":
-        start = lastdir / "STATE" / "start.txt" if lastdir.is_symlink() else None
-        if (
-            lastdir.is_symlink()
-            and (lastdir / f"{ctx.progname}.log").is_file()
-            and start
-            and start.is_file()
-            and not start.read_text().strip()
-        ):
-            ctx.workdir = str(lastdir.resolve())
-        elif lastdir.is_symlink() and start and start.is_file() and start.read_text().strip():
-            ctx.fatal(
-                "F18",
-                "The first test plan is not complete yet. Use '%s --continue' to resume.",
-                ctx.progname,
-            )
-        else:
-            ctx.usertype = "finish"
-            ctx.launchmode = "start"
-        return
-
-    if ctx.launchmode == "retest":
-        numbers = Path(f"/var/lib/{ctx.progname}/numbers.txt")
-        wd = lastdir.resolve() if lastdir.is_symlink() else None
-        if (
-            wd
-            and (wd / f"{ctx.progname}.log").is_file()
-            and numbers.is_file()
-            and re.search(rf"^{re.escape(ctx.retestno)}\s", numbers.read_text(), re.M)
-            and _workdir_has_retest_data(wd)
-            and _workdir_has_retest_settings(wd)
-        ):
-            ctx.workdir = str(wd)
-        else:
-            ctx.fatal(
-                "F18", "The specified test '%s' cannot be retaken at this time.", ctx.retestno
-            )
-
-
-def start_new_run(ctx: RuntimeContext, argv: list[str]) -> None:
-    home = ctx.homedir or os.environ.get("HOME", "")
-    lastdir = Path(home) / "HW-TEST"
-    workdir = Path(
-        ctx.workdir
-        or (
-            Path(home) / ".local/share" / ctx.progname / (ctx.repodate or date.today().isoformat())
-        )
-    )
-    ctx.workdir = str(workdir)
-
-    if getattr(ctx, "usertype", None):
-        msg = ctx.L("L001", "The launch mode '%s' has been changed, testing will begin again!")
-        print(f"{ctx.CLR_WARN}{msg % ctx.usertype}{ctx.CLR_NORM}")
-
-    if ctx.dist_upgrade or ctx.update_kernel:
-        msg = ctx.L("L002", "Before testing, the system and kernel will be updated!")
-        print(f"{ctx.CLR_ERR}{msg}{ctx.CLR_NORM}")
-        if not ctx.batchmode:
-            step = ctx.L("L003", "Press Ctrl-C to abort or any other key to continue...")
-            print(step, flush=True)
-            if not read_key(abort_on_ctrl_c=True):
-                ctx.fatal("F20", "Testing canceled.")
-        print(flush=True)
-
-    if workdir.exists():
-        shutil.rmtree(workdir)
-    if lastdir.exists() or lastdir.is_symlink():
-        lastdir.unlink(missing_ok=True)
-    (workdir / "STATE").mkdir(parents=True)
-    lastdir.symlink_to(workdir)
-    shutil.copy(f"/var/lib/{ctx.progname}/start.txt", workdir / "STATE" / "start.txt")
-    first = (workdir / "STATE" / "start.txt").read_text(encoding="utf-8").splitlines()[0]
-    (workdir / "STATE" / "STEP").write_text(first.split("\t")[-1] + "\n", encoding="utf-8")
-    (workdir / "STATE" / "RESULTS").write_text("", encoding="utf-8")
-    ctx.logfile = str(workdir / f"{ctx.progname}.log")
-    ctx.xorglog = str(workdir / "xorg.log")
-    title = f"{ctx.progname} {' '.join(argv)}"
-    with open(ctx.logfile, "w", encoding="utf-8") as lf:
-        print(f"[{time.strftime('%H:%M:%S')}] {title}", file=lf)
-        Path(ctx.xorglog).write_text("", encoding="utf-8")
-    step = create_step((workdir / "STATE" / "STEP").read_text().strip(), ctx)
-    ctx.draw_title_line(TEST_PASSED, step.number, step.title())
-    setup_resume_autorun(ctx)
-    ctx.write_config()
-
-
-def _step_role(ctx: RuntimeContext, stepname: str) -> str:
-    plan = Path(ctx.workdir) / "STATE" / ctx.testplan
-    if not plan.is_file():
-        return ""
-    for line in plan.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if line.endswith(stepname):
-            return line.split("\t", 1)[0]
-    return ""
-
-
-def _step_needs_user_handoff(ctx: RuntimeContext, stepname: str) -> bool:
-    """True when the next step requires an interactive user session (not batch/TUI skip)."""
-    role = _step_role(ctx, stepname)
-    if role == "root":
-        return False
-    if role not in ("user", "both"):
-        return False
-    step = create_step(stepname, ctx)
-    return step.pre() != TEST_SKIPPED
-
-
-def _user_has_graphical_session(username: str) -> bool:
-    import pwd
-
-    from hw_test.de_terminal import _session_env_for_uid
-
-    try:
-        pw = pwd.getpwnam(username)
-    except KeyError:
-        return False
-    env = _session_env_for_uid(pw.pw_uid)
-    return bool(env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"))
-
-
-def _ensure_express_packages(ctx: RuntimeContext) -> None:
-    """Install express-test packages while still root (before user handoff)."""
-    if not (ctx.xprss_test and ctx.have_xorg) or os.geteuid() != 0:
-        return
-    missing = [
-        pkg
-        for pkg in (
-            "yad",
-            "notify-send",
-            "xdg-utils",
-            "pulseaudio-utils",
-            "icon-theme-adwaita",
-            "sound-theme-freedesktop",
-        )
-        if ctx.is_pkg_available(pkg) and not ctx.is_pkg_installed(pkg)
-    ]
-    if missing:
-        ctx.spawn("apt-get", "install", "-y", "--", *missing)
-
-
-def _switch_to_user_in_process(ctx: RuntimeContext, next_step: str = "") -> bool:
-    """Drop root privileges and continue testing in the same terminal."""
-    if os.geteuid() != 0:
-        return True
-    if not ctx.username:
-        return False
-    import pwd
-
-    try:
-        pw = pwd.getpwnam(ctx.username)
-    except KeyError:
-        return False
-    if pw.pw_uid == 0:
-        return False
-
-    from hw_test.de_terminal import prepare_user_session_env, wait_for_display
-
-    prepare_user_session_env(ctx, pw.pw_uid)
-    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
-        if next_step == "express" and wait_for_display(120):
-            prepare_user_session_env(ctx, pw.pw_uid)
-    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
-        return False
-
-    ctx.chown_workdir_for_user()
-    try:
-        os.initgroups(ctx.username, pw.pw_gid)
-    except (AttributeError, PermissionError, OSError):
-        try:
-            os.setgroups([])
-        except OSError:
-            pass
-    os.setgid(pw.pw_gid)
-    os.setuid(pw.pw_uid)
-    os.environ["HOME"] = pw.pw_dir
-    os.environ["USER"] = ctx.username
-    os.environ["LOGNAME"] = ctx.username
-    return True
-
-
-def _handoff_user_message(ctx: RuntimeContext, next_step: str) -> str:
-    if ctx.langid == "ru":
-        if next_step == "config":
-            return "Запуск шага 5.4 «Определение плана тестирования»..."
-        if next_step == "express":
-            return "Запуск шага 9 «Экспресс-тест»..."
-        return "Переключение на пользовательскую сессию..."
-    if next_step == "config":
-        return "Starting step 5.4 (test plan configuration)..."
-    if next_step == "express":
-        return "Starting step 9 (express test)..."
-    return "Switching to user session..."
-
-
-def _exit_after_handoff(ctx: RuntimeContext) -> None:
-    if getattr(ctx, "desktop_icon_start", None):
-        close_desktop_terminal_if_needed(uid=test_user_uid(ctx.username))
-    raise SystemExit(0)
-
-
-def _handoff_to_user_session(ctx: RuntimeContext) -> None:
-    next_step = ""
-    stepfile = Path(ctx.workdir) / "STATE" / "STEP"
-    if stepfile.is_file():
-        next_step = stepfile.read_text(encoding="utf-8").splitlines()[0].strip()
-
-    if next_step == "express":
-        _ensure_express_packages(ctx)
-
-    if _switch_to_user_in_process(ctx, next_step):
-        print(
-            f"\n{ctx.CLR_OK}{_handoff_user_message(ctx, next_step)}{ctx.CLR_NORM}\n",
-            flush=True,
-        )
-        return
-
-    if (
-        not ctx.disable_autorun
-        and ctx.username
-        and os.geteuid() == 0
-        and _user_has_graphical_session(ctx.username)
-    ):
-        from hw_test.de_terminal import spawn_continue_in_user_session
-
-        settings = Path(ctx.workdir) / "STATE" / "settings.ini"
-        if spawn_continue_in_user_session(
-            ctx.username,
-            settings if settings.is_file() else None,
-            ctx.progname,
-        ):
-            if ctx.langid == "ru":
-                if next_step == "config":
-                    msg = (
-                        "Открыто второе окно для шага 5.4 «Определение плана тестирования». "
-                        "Продолжайте в нём; окно с обновлением (root) можно закрыть."
-                    )
-                elif next_step == "express":
-                    msg = (
-                        "Открыто окно терминала для шага 9 «Экспресс-тест». "
-                        "Продолжайте там; окно root можно закрыть."
-                    )
-                else:
-                    msg = (
-                        "Открыто второе окно терминала для продолжения тестирования. "
-                        "Продолжайте там; это окно root можно закрыть."
-                    )
-            else:
-                if next_step == "config":
-                    msg = (
-                        "A second terminal was opened for step 5.4 (test plan). "
-                        "Continue there; you may close this root window."
-                    )
-                elif next_step == "express":
-                    msg = (
-                        "A terminal was opened for step 9 (express test). "
-                        "Continue there; you may close this root window."
-                    )
-                else:
-                    msg = (
-                        "A second terminal was opened to continue testing. "
-                        "Continue there; you may close this root window."
-                    )
-            print(f"\n{ctx.CLR_OK}{msg}{ctx.CLR_NORM}\n", flush=True)
-            _exit_after_handoff(ctx)
-    if (
-        next_step == "config"
-        and not graphical_session()
-        and ctx.username
-        and ctx.has_binary("dialog")
-    ):
-        from hw_test.de_terminal import spawn_continue_on_vt
-
-        if spawn_continue_on_vt(ctx.username, ctx.progname):
-            if ctx.langid == "ru":
-                msg = (
-                    "Шаг 5.4 «Определение плана тестирования» открыт на консоли tty1 "
-                    "(Ctrl+Alt+F1). Завершите настройку там."
-                )
-            else:
-                msg = (
-                    "Step 5.4 (test plan) is open on console tty1 (Ctrl+Alt+F1). "
-                    "Complete the configuration there."
-                )
-            print(f"\n{ctx.CLR_OK}{msg}{ctx.CLR_NORM}\n", flush=True)
-            _exit_after_handoff(ctx)
-    if ctx.langid == "ru":
-        msg = "Продолжите тестирование от пользователя: hw-test --continue"
-        if next_step == "config":
-            msg = "Шаг 5.4 (план тестирования): hw-test --continue"
-        elif next_step == "express":
-            msg = "Шаг 9 (экспресс-тест): hw-test --continue"
-    else:
-        msg = "Continue testing as user: hw-test --continue"
-        if next_step == "config":
-            msg = "Step 5.4 (test plan): hw-test --continue"
-        elif next_step == "express":
-            msg = "Step 9 (express test): hw-test --continue"
-    print(f"\n{ctx.CLR_OK}{msg}{ctx.CLR_NORM}\n", flush=True)
-    _exit_after_handoff(ctx)
+# --- Вспомогательные функции цикла шагов ---
 
 
 def _express_retry_prompt(ctx: RuntimeContext, status: int) -> None:
@@ -587,6 +234,9 @@ def _stage_finish_plan(ctx: RuntimeContext) -> bool:
     return True
 
 
+# --- Главный цикл выполнения плана ---
+
+
 def run_main_loop(ctx: RuntimeContext) -> None:
     os.chdir(ctx.workdir)
     ctx.testplan = "start.txt"
@@ -630,9 +280,9 @@ def run_main_loop(ctx: RuntimeContext) -> None:
         if (
             usertype == "user"
             and os.geteuid() == 0
-            and _step_needs_user_handoff(ctx, ctx.stepname)
+            and step_needs_user_handoff(ctx, ctx.stepname)
         ):
-            _handoff_to_user_session(ctx)
+            handoff_to_user_session(ctx)
 
         if usertype in ("user", "both") and os.geteuid() != 0:
             from hw_test.de_terminal import prepare_user_session_env
@@ -701,8 +351,8 @@ def run_main_loop(ctx: RuntimeContext) -> None:
                 .splitlines()[0]
                 .strip()
             )
-            if _step_needs_user_handoff(ctx, next_step):
-                _handoff_to_user_session(ctx)
+            if step_needs_user_handoff(ctx, next_step):
+                handoff_to_user_session(ctx)
                 continue
 
     Path("REBOOT.txt").unlink(missing_ok=True)
@@ -725,6 +375,9 @@ def show_results(ctx: RuntimeContext, *, log: bool = False) -> None:
         step = create_step(step_id, ctx)
         step.show_results(rc, log=log)
         ctx.draw_title_line(rc, step.number, step.title(), log=log)
+
+
+# --- Точка входа ---
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -824,6 +477,9 @@ def main(argv: list[str] | None = None) -> None:
     run_main_loop(ctx)
     _final_message(ctx)
     pause_before_exit(ctx)
+
+
+# --- Подготовка режимов retest / finish и финальные сообщения ---
 
 
 def _setup_retest(ctx: RuntimeContext, argv: list[str]) -> None:

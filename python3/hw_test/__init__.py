@@ -1,4 +1,8 @@
-"""HW-Test Python step modules (ALT Linux hardware compatibility suite)."""
+"""hw-test — автоматизация тестирования совместимости оборудования ALT Linux.
+
+Пакет устанавливается в site-packages; данные — в /var/lib/hw-test и libexec.
+Руководство разработчика: hw_test/README.md
+"""
 
 from hw_test.constants import (
     TEST_ALLOWED,

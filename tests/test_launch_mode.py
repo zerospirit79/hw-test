@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from hw_test.context import RuntimeContext
-from hw_test.main import resolve_launch_mode
+from hw_test.launch_mode import resolve_launch_mode
 
 
 class AutoLaunchModeTests(unittest.TestCase):

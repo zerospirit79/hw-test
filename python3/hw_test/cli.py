@@ -1,4 +1,4 @@
-"""Command-line interface."""
+"""Разбор аргументов командной строки hw-test."""
 
 from __future__ import annotations
 
