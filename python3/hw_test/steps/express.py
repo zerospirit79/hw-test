@@ -101,7 +101,12 @@ class ExpressStep(StepBase):
         if not (ctx.have_mate or ctx.have_kde5 or ctx.have_xfce or ctx.have_gnome):
             return TEST_SKIPPED
         ctx.spawn(": Checking XDG_CURRENT_DESKTOP...")
-        if os.environ.get("XDG_CURRENT_DESKTOP") not in ("KDE", "MATE", "XFCE", "GNOME"):
+        desktops = {
+            part.strip().upper()
+            for part in os.environ.get("XDG_CURRENT_DESKTOP", "").split(":")
+            if part.strip()
+        }
+        if not desktops.intersection({"KDE", "MATE", "XFCE", "GNOME"}):
             return TEST_SKIPPED
         ctx.spawn(": Checking for a Graphics card...")
         if Path("inxi-G.txt").is_file():

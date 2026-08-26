@@ -19,7 +19,13 @@ from pathlib import Path
 
 from hw_test import cli
 from hw_test.config_loader import SETTINGS_INI_SKIP_KEYS, load_config_files
-from hw_test.constants import TEST_ALLOWED, TEST_PASSED, TEST_RUNNING
+from hw_test.constants import (
+    TEST_ALLOWED,
+    TEST_BLOCKED,
+    TEST_FAILED,
+    TEST_PASSED,
+    TEST_RUNNING,
+)
 from hw_test.context import FatalError, RuntimeContext, get_context, graphical_session, set_context
 from hw_test.launch_mode import resolve_launch_mode, start_new_run
 from hw_test.paths import PROGNAME, libexec_dir
@@ -329,11 +335,14 @@ def run_main_loop(ctx: RuntimeContext) -> None:
 
         ctx.log_step_result(status)
 
+        # Express: retry only when the test was expected to run (FAILED / BLOCKED
+        # with a desktop). SKIPPED on headless Server (no GUI) must not pause the plan.
         if (
             ctx.stepname == "express"
             and plan_name == "start.txt"
             and ctx.xprss_test
-            and status != TEST_PASSED
+            and status in (TEST_FAILED, TEST_BLOCKED)
+            and (status == TEST_FAILED or ctx.have_xorg)
         ):
             if ctx.batchmode:
                 break
@@ -631,7 +640,12 @@ def _express_pause_message(ctx: RuntimeContext) -> None:
 def _final_message(ctx: RuntimeContext) -> None:
     remaining = _start_plan_remaining(ctx)
     if ctx.testplan == "start.txt" and remaining:
-        if _current_step_name(ctx) == "express" or any(ln.endswith("express") for ln in remaining):
+        express_pending = _current_step_name(ctx) == "express" or any(
+            ln.endswith("express") for ln in remaining
+        )
+        # Headless Server: express may remain only until SKIPPED advances the plan;
+        # do not claim express is incomplete when it was never applicable.
+        if express_pending and ctx.xprss_test:
             _express_pause_message(ctx)
         else:
             cmd = ctx.bold(f"{ctx.progname} --continue")

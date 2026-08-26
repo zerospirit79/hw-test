@@ -1,4 +1,9 @@
-"""Test plan configuration forms (config-form-gui.sh / config-form-tui.sh)."""
+"""Test plan configuration forms (config-form-gui.sh / config-form-tui.sh).
+
+On ALT Server and other headless systems the form runs via ``dialog`` (TUI).
+Graphics-only optional tests (express, glmark/v3d, webcam) are cleared when
+there is no Xorg/Wayland stack — they cannot run without a desktop session.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +17,13 @@ from hw_test import l10n
 from hw_test.config_loader import load_config_files
 from hw_test.context import FatalError, RuntimeContext, graphical_session
 from hw_test.gui.forms import _run_capture
+
+# Optional tests that require a graphical desktop (not available on typical Server).
+_GRAPHICS_ONLY_TAGS = ("xprss", "v3d", "webcam")
+
+# ncurses: wait long enough after ESC so arrow keys (ESC [ A/B/C/D) are not
+# treated as Cancel under load right after reboot (classic dialog false cancel).
+_DIALOG_ESCDELAY_MS = "3000"
 
 
 def _test_enabled(ctx: RuntimeContext, tag: str) -> bool:
@@ -31,6 +43,50 @@ def _test_flags(ctx: RuntimeContext) -> tuple[List[Tuple[str, str, bool]], str]:
     mate_item, tests_list, _ = l10n.load_config_menu(ctx.langid, ctx.libdir)
     items = [(tag, label, _test_enabled(ctx, tag)) for tag, label in tests_list]
     return items, mate_item
+
+
+def _has_desktop_stack(ctx: RuntimeContext) -> bool:
+    """True when Xorg/Wayland and a known DE were detected (Workstation-like)."""
+    if not ctx.have_xorg:
+        return False
+    return bool(ctx.have_mate or ctx.have_kde5 or ctx.have_xfce or ctx.have_gnome)
+
+
+def clear_graphics_only_tests(ctx: RuntimeContext) -> list[str]:
+    """Disable optional tests that cannot run without a desktop; return cleared tags."""
+    if _has_desktop_stack(ctx):
+        return []
+    cleared: list[str] = []
+    for tag in _GRAPHICS_ONLY_TAGS:
+        attr = f"{tag}_test"
+        if _test_enabled(ctx, tag):
+            setattr(ctx, attr, "")
+            cleared.append(tag)
+    return cleared
+
+
+def _warn_cleared_graphics_tests(ctx: RuntimeContext, cleared: list[str]) -> None:
+    if not cleared:
+        return
+    names = ", ".join(cleared)
+    if ctx.langid == "ru":
+        msg = (
+            f"Тесты, требующие графическую среду ({names}), отключены: "
+            "на этой системе нет рабочего стола (типично для ALT Server)."
+        )
+    else:
+        msg = (
+            f"Graphics-only tests ({names}) were disabled: "
+            "no desktop environment on this system (typical for ALT Server)."
+        )
+    print(f"{ctx.CLR_WARN}{msg}{ctx.CLR_NORM}", flush=True)
+
+
+def _apply_form_selection(ctx: RuntimeContext, items: List[Tuple[str, str, bool]], selected: set[str]) -> None:
+    for tag, _label, _ in items:
+        setattr(ctx, f"{tag}_test", "1" if tag in selected else "")
+    cleared = clear_graphics_only_tests(ctx)
+    _warn_cleared_graphics_tests(ctx, cleared)
 
 
 def run_gui(ctx: RuntimeContext) -> None:
@@ -54,12 +110,16 @@ def run_gui(ctx: RuntimeContext) -> None:
     if proc.returncode != 0 or not (proc.stdout or "").strip():
         ctx.fatal("F20", "Testing canceled.")
     values = proc.stdout.split()
-    for i, (tag, _label, _enabled) in enumerate(items):
-        setattr(ctx, f"{tag}_test", "1" if i < len(values) and values[i] == "TRUE" else "")
+    selected = {
+        tag
+        for i, (tag, _label, _enabled) in enumerate(items)
+        if i < len(values) and values[i].upper() in ("TRUE", "1", "YES", "ON")
+    }
+    _apply_form_selection(ctx, items, selected)
 
 
 def run_tui(ctx: RuntimeContext, can_install_mate: bool = False) -> None:
-    """dialog checklist for optional tests."""
+    """dialog checklist for optional tests (primary UI on ALT Server / headless)."""
     items, mate_item = _test_flags(ctx)
     version = os.environ.get("HWTEST_VERSION", "")
     build = os.environ.get("HWTEST_BUILD_DATE", "")
@@ -80,18 +140,30 @@ def run_tui(ctx: RuntimeContext, can_install_mate: bool = False) -> None:
         "--title",
         f"[ {title} ]",
         "--checklist",
-        '""',
+        "",
         str(height),
         str(tui_width),
         str(h),
     ]
     if can_install_mate:
-        cmd.extend(["mate", f'"{mate_item}"', "off"])
+        cmd.extend(["mate", mate_item, "off"])
     for tag, label, enabled in items:
+        # On headless Server do not pre-check graphics-only items even if detect set them.
+        if tag in _GRAPHICS_ONLY_TAGS and not _has_desktop_stack(ctx):
+            enabled = False
         cmd.extend([tag, label, "on" if enabled else "off"])
 
     if not sys.stdin.isatty():
         ctx.fatal("F20", "No terminal for test plan dialog (use ssh -t).")
+
+    env = os.environ.copy()
+    # Prefer a longer ESCDELAY so Down/Up after reboot are not misread as Escape→Cancel.
+    try:
+        current = int(env.get("ESCDELAY", "1000") or "1000")
+    except ValueError:
+        current = 1000
+    if current < int(_DIALOG_ESCDELAY_MS):
+        env["ESCDELAY"] = _DIALOG_ESCDELAY_MS
 
     # Like config-form-tui.sh: UI on stdout (terminal), selected tags on stderr.
     proc = subprocess.run(
@@ -99,19 +171,20 @@ def run_tui(ctx: RuntimeContext, can_install_mate: bool = False) -> None:
         stdin=sys.stdin,
         stderr=subprocess.PIPE,
         text=True,
+        env=env,
     )
     if proc.returncode != 0:
         ctx.fatal("F20", "Testing canceled.")
     os.system("clear")
 
-    for tag, _label, _ in items:
-        setattr(ctx, f"{tag}_test", "")
     ctx.install_mate = ""
+    selected: set[str] = set()
     for tag in (proc.stderr or "").split():
         if tag == "mate":
             ctx.install_mate = "1"
         else:
-            setattr(ctx, f"{tag}_test", "1")
+            selected.add(tag)
+    _apply_form_selection(ctx, items, selected)
 
 
 def run_config_form(ctx: RuntimeContext) -> None:
