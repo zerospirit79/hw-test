@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.2.1-alt1] - 2026-08-26
+
+### Fixed
+
+- ALT #60241: `dialog` ESCDELAY so arrow keys after reboot do not cancel the TUI
+  test-plan form (typical on ALT Server without graphics).
+- ALT #60237: graphics-only express (`xprss`/`v3d`/`webcam`) cleared on headless;
+  SKIPPED express no longer pauses the plan with a retry prompt.
+
 ## [2.2.0-alt6] - 2026-06-06
 
 ### Fixed

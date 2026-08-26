@@ -6,7 +6,7 @@
 %endif
 
 Name: hw-test
-Version: 2.2.0
+Version: 2.2.1
 Release: alt1
 
 Summary: Hardware compatibility testing tool for ALT Linux
@@ -214,5 +214,9 @@ sed -i -E "s|$a|$b|g" /etc/sudoers
 %doc img html CHANGELOG.md LICENSE README.md
 
 %changelog
+* Wed Aug 26 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.1-alt1
+- Fixed (ALT #60241): dialog ESCDELAY so arrow keys do not cancel TUI test plan.
+- Fixed (ALT #60237): skip graphics-only express on headless Server; do not pause on SKIPPED.
+
 * Fri Jun 06 2026 Pavel Shilov <zerospirit@altlinux.org> 2.2.0-alt1
 - Initial build for Sisyphus
