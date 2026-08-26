@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hw-test"
-version = "2.2.0"
+version = "2.2.1"
 description = "Hardware compatibility testing tool for ALT Linux (based on pc-test / Basalt SPo methodology)"
 readme = "README.md"
 license = "GPL-3.0-or-later"
