@@ -48,7 +48,7 @@ SETTINGS_KEY_HELP: dict[str, str] = {
     "local_media_base": "Базовый каталог съёмных носителей (/media/user)",
     "local_media_check": "Метка/подкаталог с зеркалом на носителе",
     "unsafe_diskperf": "Разрешить тесты на неразмонтированных дисках",
-    "headless_autorun": "Автопродолжение без GUI (systemd unit)",
+    "headless_autorun": "Автопродолжение без GUI при входе (profile.d)",
     "ping_server": "Хост для проверки интернета (ping)",
     "express_video_set": "Набор видео для экспресс-теста: youtube, rutube, vkvideo",
     "local_video_sample": "URL собственного видео для экспресс-теста",

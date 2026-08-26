@@ -30,4 +30,6 @@ if [ "${LANG-}" = ru* ] || [ "${LC_MESSAGES-}" = ru* ]; then
 else
 	echo "hw-test: resuming testing after reboot..."
 fi
-exec hw-test --continue --no-autorun
+# Do not exec: if hw-test exits (e.g. false Esc cancel on console), keep the login shell.
+hw-test --continue --no-autorun
+rm -f "$lock" 2>/dev/null || true

@@ -16,6 +16,23 @@ RESUME_UNIT_SUFFIX = "-resume.service"
 SYSTEM_INSTANCE_SUFFIX = "-resume@"
 
 
+def _print_headless_resume_hint(ctx: RuntimeContext) -> None:
+    """Tell the operator that login alone resumes testing (no need to type hw-test)."""
+    user = ctx.username or "user"
+    if ctx.langid == "ru":
+        msg = (
+            f"После перезагрузки войдите как «{user}» (консоль или SSH) — "
+            f"{ctx.progname} продолжит тестирование сам, без ввода команды "
+            f"(как автозапуск в графике)."
+        )
+    else:
+        msg = (
+            f"After reboot, log in as “{user}” (console or SSH) — "
+            f"{ctx.progname} will continue automatically (same idea as desktop autostart)."
+        )
+    print(f"\n{ctx.CLR_OK}{msg}{ctx.CLR_NORM}\n", flush=True)
+
+
 def resume_unit_name(progname: str) -> str:
     return f"{progname}{RESUME_UNIT_SUFFIX}"
 
@@ -56,8 +73,10 @@ def setup_resume_autorun(ctx: RuntimeContext, *, force: bool = False) -> None:
             chown_autostart_tree(ctx.homedir, ctx.username)
             remove_desktop_file(ctx.progname, ctx.homedir)
             ctx.spawn(
-                f": Headless resume on login enabled ({system_instance_unit(ctx.progname, ctx.username)})"
+                f": Headless resume on login enabled "
+                f"(profile.d + {RESUME_ON_LOGIN} for {ctx.username})"
             )
+            _print_headless_resume_hint(ctx)
 
 
 def _clear_resume_hooks_impl(progname: str, username: str, homedir: str) -> None:
@@ -142,17 +161,22 @@ def _remove_resume_marker(homedir: str) -> None:
 
 
 def enable_headless_resume(progname: str, username: str, homedir: str) -> bool:
-    """Mark headless resume for the next interactive login (not at boot)."""
-    if not system_template_unit(progname).is_file():
-        return False
+    """Mark headless resume for the next interactive login (TTY/SSH).
+
+    Primary hook is ``/etc/profile.d/hw-test-resume.sh`` (same idea as graphical
+    ``~/.config/autostart``: user logs in → hw-test continues). The systemd
+    template is optional legacy; boot-time enable is intentionally not used so
+    TUI steps (dialog) still have a real console.
+    """
     if not _write_resume_marker(username, homedir):
         return False
-    unit = system_instance_unit(progname, username)
-    home = Path(homedir or pwd.getpwnam(username).pw_dir)
-    _write_system_dropin(progname, username, home)
-    # Drop legacy symlinks that started resume from multi-user.target at boot.
-    subprocess.run(["systemctl", "disable", unit], check=False)
-    subprocess.run(["systemctl", "daemon-reload"], check=False)
+    if system_template_unit(progname).is_file():
+        unit = system_instance_unit(progname, username)
+        home = Path(homedir or pwd.getpwnam(username).pw_dir)
+        _write_system_dropin(progname, username, home)
+        # Drop legacy symlinks that started resume from multi-user.target at boot.
+        subprocess.run(["systemctl", "disable", unit], check=False)
+        subprocess.run(["systemctl", "daemon-reload"], check=False)
     return True
 
 

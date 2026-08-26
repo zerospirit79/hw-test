@@ -16,7 +16,7 @@ Options:
                     and the public archive of the p9/p10/Sisyphus
                     repository.
   -n, --name=<N>    Computer name used as part of archive name.
-      --no-autorun  Disable autorun via desktop file.
+      --no-autorun  Disable resume after reboot (desktop / Server login).
       --no-sources  Disable APT sources changes.
       --no-update   Disable APT sources changes, disable
                     full system and Linux kernel updates.

@@ -46,6 +46,27 @@ class HeadlessResumeMarkerTests(unittest.TestCase):
             self.assertTrue(disable_calls)
             self.assertFalse(enable_calls)
 
+    @patch("hw_test.resume_autorun.system_template_unit")
+    @patch("hw_test.resume_autorun.subprocess.run")
+    @patch("hw_test.resume_autorun.os.geteuid", return_value=1000)
+    @patch("hw_test.resume_autorun.pwd.getpwnam")
+    def test_enable_writes_marker_without_unit_template(
+        self,
+        getpwnam: object,
+        _euid: object,
+        run: object,
+        template: object,
+    ) -> None:
+        template.return_value.is_file.return_value = False
+        getpwnam.return_value = type("PW", (), {"pw_dir": "/home/test", "pw_uid": 1000})()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home" / "test"
+            home.mkdir(parents=True)
+            (home / "HW-TEST").mkdir()
+            self.assertTrue(enable_headless_resume("hw-test", "test", str(home)))
+            self.assertTrue((home / "HW-TEST" / "STATE" / RESUME_ON_LOGIN).is_file())
+            self.assertFalse(run.called)
+
     @patch("hw_test.resume_autorun.subprocess.run")
     @patch("hw_test.resume_autorun.pwd.getpwnam")
     def test_disable_removes_marker(self, getpwnam: object, _run: object) -> None:
@@ -57,7 +78,6 @@ class HeadlessResumeMarkerTests(unittest.TestCase):
             (state / RESUME_ON_LOGIN).write_text("", encoding="utf-8")
             disable_headless_resume("hw-test", "test", str(home))
             self.assertFalse((state / RESUME_ON_LOGIN).exists())
-
 
 if __name__ == "__main__":
     unittest.main()

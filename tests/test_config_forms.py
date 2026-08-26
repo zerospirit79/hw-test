@@ -11,11 +11,18 @@ from hw_test.gui import config_forms
 
 
 class ConfigFormsTuiTests(unittest.TestCase):
+    @patch("hw_test.gui.config_forms.os.system")
+    @patch("hw_test.gui.config_forms._drain_tty_input")
     @patch("hw_test.gui.config_forms.subprocess.run")
     @patch("hw_test.gui.config_forms.sys.stdin.isatty", return_value=True)
     @patch("hw_test.gui.config_forms.l10n.load_config_menu")
     def test_run_tui_uses_terminal_for_dialog_ui(
-        self, load_menu: MagicMock, _tty: object, run: MagicMock
+        self,
+        load_menu: MagicMock,
+        _tty: object,
+        run: MagicMock,
+        _drain: MagicMock,
+        _clear: MagicMock,
     ) -> None:
         load_menu.return_value = ("", [("fio", "Disk perf")], 64)
         run.return_value = MagicMock(returncode=0, stderr="fio\n")
@@ -31,15 +38,23 @@ class ConfigFormsTuiTests(unittest.TestCase):
         self.assertEqual(kwargs.get("stderr"), subprocess.PIPE)
         self.assertEqual(ctx.fio_test, "1")
         env = kwargs.get("env") or {}
-        self.assertGreaterEqual(int(env.get("ESCDELAY", "0")), 3000)
+        self.assertGreaterEqual(int(env.get("ESCDELAY", "0")), 10000)
         cmd = run.call_args.args[0]
         self.assertEqual(cmd[cmd.index("--checklist") + 1], "")
+        self.assertIn("--no-mouse", cmd)
 
+    @patch("hw_test.gui.config_forms.os.system")
+    @patch("hw_test.gui.config_forms._drain_tty_input")
     @patch("hw_test.gui.config_forms.subprocess.run")
     @patch("hw_test.gui.config_forms.sys.stdin.isatty", return_value=True)
     @patch("hw_test.gui.config_forms.l10n.load_config_menu")
     def test_run_tui_clears_express_on_headless_server(
-        self, load_menu: MagicMock, _tty: object, run: MagicMock
+        self,
+        load_menu: MagicMock,
+        _tty: object,
+        run: MagicMock,
+        _drain: MagicMock,
+        _clear: MagicMock,
     ) -> None:
         load_menu.return_value = ("", [("xprss", "Express"), ("power", "Power")], 64)
         run.return_value = MagicMock(returncode=0, stderr="xprss power\n")
@@ -52,6 +67,59 @@ class ConfigFormsTuiTests(unittest.TestCase):
         config_forms.run_tui(ctx)
         self.assertEqual(ctx.xprss_test, "")
         self.assertEqual(ctx.power_test, "1")
+
+    @patch("hw_test.gui.config_forms.os.system")
+    @patch("hw_test.gui.config_forms._confirm_cancel_tui", return_value=False)
+    @patch("hw_test.gui.config_forms._drain_tty_input")
+    @patch("hw_test.gui.config_forms.subprocess.run")
+    @patch("hw_test.gui.config_forms.sys.stdin.isatty", return_value=True)
+    @patch("hw_test.gui.config_forms.l10n.load_config_menu")
+    def test_run_tui_retries_after_false_cancel(
+        self,
+        load_menu: MagicMock,
+        _tty: object,
+        run: MagicMock,
+        _drain: MagicMock,
+        _confirm: MagicMock,
+        _clear: MagicMock,
+    ) -> None:
+        load_menu.return_value = ("", [("power", "Power")], 64)
+        run.side_effect = [
+            MagicMock(returncode=1, stderr=""),
+            MagicMock(returncode=0, stderr="power\n"),
+        ]
+        ctx = RuntimeContext()
+        ctx.progname = "hw-test"
+        ctx.langid = "en"
+        ctx.libdir = "/usr/libexec/hw-test"
+        ctx.workdir = "/tmp/w"
+        config_forms.run_tui(ctx)
+        self.assertEqual(ctx.power_test, "1")
+        self.assertEqual(run.call_count, 2)
+        _confirm.assert_called_once()
+
+    @patch("hw_test.gui.config_forms._confirm_cancel_tui", return_value=True)
+    @patch("hw_test.gui.config_forms._drain_tty_input")
+    @patch("hw_test.gui.config_forms.subprocess.run")
+    @patch("hw_test.gui.config_forms.sys.stdin.isatty", return_value=True)
+    @patch("hw_test.gui.config_forms.l10n.load_config_menu")
+    def test_run_tui_fatal_when_cancel_confirmed(
+        self,
+        load_menu: MagicMock,
+        _tty: object,
+        run: MagicMock,
+        _drain: MagicMock,
+        _confirm: MagicMock,
+    ) -> None:
+        load_menu.return_value = ("", [("power", "Power")], 64)
+        run.return_value = MagicMock(returncode=1, stderr="")
+        ctx = RuntimeContext()
+        ctx.progname = "hw-test"
+        ctx.langid = "en"
+        ctx.libdir = "/usr/libexec/hw-test"
+        ctx.workdir = "/tmp/w"
+        with self.assertRaises(FatalError):
+            config_forms.run_tui(ctx)
 
     @patch("hw_test.gui.config_forms.sys.stdin.isatty", return_value=False)
     def test_run_tui_fatal_without_tty(self, _tty: object) -> None:

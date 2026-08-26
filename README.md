@@ -111,30 +111,32 @@ $ hw-test
 При работе в **графическом сеансе** hw-test будет запускаться автоматически
 (файл `~/.config/autostart/hw-test.desktop`) до окончания первой фазы тестирования.
 
-На **системах без графики** (ALT Server, виртуальная машина по SSH) автопродолжение
-выполняется через systemd unit **`hw-test-resume@<пользователь>.service`**
-(запуск на `multi-user.target`, без входа в систему и без графического сеанса).
-После reboot выполняется `hw-test --continue --batch --no-autorun`, если существует
-`~/HW-TEST/STATE/STEP`. По умолчанию режим включён автоматически (`headless_autorun`
-в конфиге не задан); для отключения укажите `headless_autorun=0` в `/etc/hw-test.conf`.
+На **системах без графики** (ALT Server, консоль/SSH) автопродолжение работает
+по тому же принципу, что и в графике: после reboot достаточно **войти** под
+тестовым пользователем — `/etc/profile.d/hw-test-resume.sh` запускает
+`hw-test --continue`, если есть маркер `~/HW-TEST/STATE/RESUME_ON_LOGIN`
+(его создаёт hw-test перед перезагрузкой). Вводить команду вручную не нужно.
 
-Рекомендуемый запуск на сервере:
+Аналогия с графикой:
+
+| Среда | Что включает автопродолжение |
+|-------|------------------------------|
+| Workstation / DE | вход в сеанс → `~/.config/autostart/hw-test.desktop` |
+| Server / без GUI | вход в TTY или SSH → `/etc/profile.d/hw-test-resume.sh` |
+
+По умолчанию режим включён (`headless_autorun` не задан). Отключение:
+`headless_autorun=0` в `/etc/hw-test.conf` или запуск с `--no-autorun`.
+
+Если автопродолжение не сработало (нет маркера, неинтерактивный shell), вручную:
 
 ```bash
-$ hw-test --batch --start
+$ hw-test --continue
 ```
 
-Если автопродолжение не сработало, вручную:
+Проверка:
 
 ```bash
-$ hw-test --batch --continue
-```
-
-Проверка (от root):
-
-```bash
-systemctl status hw-test-resume@test.service
-journalctl -u hw-test-resume@test.service
+ls ~/HW-TEST/STATE/RESUME_ON_LOGIN
 less -r ~/HW-TEST/hw-test.log
 ```
 
