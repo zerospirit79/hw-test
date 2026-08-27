@@ -68,10 +68,10 @@ class ConfigFormsTuiTests(unittest.TestCase):
             config_forms.run_tui(ctx)
         clear_resume.assert_called_once_with(ctx)
 
-    @patch("hw_test.gui.config_forms.Path")
-    @patch("hw_test.gui.config_forms.sys.stdin.isatty", return_value=False)
-    def test_run_tui_fatal_without_tty(self, _tty: object, path_cls: MagicMock) -> None:
-        path_cls.return_value.exists.return_value = False
+    @patch("hw_test.gui.config_forms._select_tests_tty", side_effect=OSError("no tty"))
+    @patch("hw_test.gui.config_forms.l10n.load_config_menu")
+    def test_run_tui_fatal_without_tty(self, load_menu: MagicMock, _select: MagicMock) -> None:
+        load_menu.return_value = ("", [("power", "Power")], 64)
         ctx = RuntimeContext()
         ctx.progname = "hw-test"
         ctx.langid = "en"

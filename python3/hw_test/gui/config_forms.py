@@ -217,9 +217,6 @@ def run_tui(ctx: RuntimeContext, can_install_mate: bool = False) -> None:
             "Enter keeps [x] marks, q cancels."
         )
 
-    if not Path("/dev/tty").exists() and not sys.stdin.isatty():
-        ctx.fatal("F20", "No terminal for test plan dialog (use ssh -t).")
-
     prepared: List[Tuple[str, str, bool]] = []
     for tag, label, enabled in items:
         if tag in _GRAPHICS_ONLY_TAGS and not _has_desktop_stack(ctx):
