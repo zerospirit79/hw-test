@@ -160,23 +160,34 @@ def _remove_resume_marker(homedir: str) -> None:
     _resume_marker_path(homedir).unlink(missing_ok=True)
 
 
+def _unlink_legacy_resume_wants(progname: str, username: str) -> None:
+    """Remove old multi-user.wants symlinks if present (no systemctl disable noise)."""
+    unit = system_instance_unit(progname, username)
+    for base in (
+        Path("/etc/systemd/system/multi-user.target.wants"),
+        Path("/usr/lib/systemd/system/multi-user.target.wants"),
+    ):
+        link = base / unit
+        try:
+            if link.is_symlink() or link.is_file():
+                link.unlink()
+        except OSError:
+            pass
+
+
 def enable_headless_resume(progname: str, username: str, homedir: str) -> bool:
     """Mark headless resume for the next interactive login (TTY/SSH).
 
     Primary hook is ``/etc/profile.d/hw-test-resume.sh`` (same idea as graphical
-    ``~/.config/autostart``: user logs in → hw-test continues). The systemd
-    template is optional legacy; boot-time enable is intentionally not used so
-    TUI steps (dialog) still have a real console.
+    ``~/.config/autostart``: user logs in → hw-test continues). The unit template
+    has no [Install] section and is only for optional manual start.
     """
     if not _write_resume_marker(username, homedir):
         return False
     if system_template_unit(progname).is_file():
-        unit = system_instance_unit(progname, username)
         home = Path(homedir or pwd.getpwnam(username).pw_dir)
         _write_system_dropin(progname, username, home)
-        # Drop legacy symlinks that started resume from multi-user.target at boot.
-        subprocess.run(["systemctl", "disable", unit], check=False)
-        subprocess.run(["systemctl", "daemon-reload"], check=False)
+        _unlink_legacy_resume_wants(progname, username)
     return True
 
 
@@ -189,9 +200,7 @@ def disable_headless_resume(progname: str, username: str, homedir: str) -> None:
     home = homedir or (pw.pw_dir if pw else "")
     if home:
         _remove_resume_marker(home)
-    unit = system_instance_unit(progname, username)
-    subprocess.run(["systemctl", "disable", unit], check=False)
+    _unlink_legacy_resume_wants(progname, username)
     dropin = _system_dropin_dir(progname, username)
     if dropin.is_dir():
         shutil.rmtree(dropin)
-    subprocess.run(["systemctl", "daemon-reload"], check=False)

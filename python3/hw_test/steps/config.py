@@ -25,14 +25,12 @@ class ConfigStep(StepBase):
         if ctx.batchmode and not sys.stdin.isatty() and not graphical_session():
             return TEST_SKIPPED
         if not graphical_session() and not sys.stdin.isatty():
-            if ctx.has_binary("dialog"):
-                return TEST_ALLOWED
-            return TEST_SKIPPED
+            return TEST_ALLOWED
         if os.geteuid() != 0:
             apply_graphical_session_env()
         if graphical_session() and ctx.has_binary("yad"):
             return TEST_ALLOWED
-        if ctx.has_binary("dialog"):
+        if sys.stdin.isatty():
             return TEST_ALLOWED
         return TEST_BLOCKED
 
@@ -42,7 +40,7 @@ class ConfigStep(StepBase):
             from hw_test.de_terminal import spawn_continue_on_vt
 
             user = ctx.username or os.environ.get("LOGNAME") or os.environ.get("USER", "")
-            if user and ctx.has_binary("dialog") and spawn_continue_on_vt(user, ctx.progname):
+            if user and spawn_continue_on_vt(user, ctx.progname):
                 ini = Path(ctx.workdir) / "STATE" / "settings.ini"
                 if ini.is_file():
                     ctx.print_settings_ini("config.ini")
@@ -54,7 +52,7 @@ class ConfigStep(StepBase):
         if graphical_session() and ctx.has_binary("yad"):
             config_forms.run_gui(ctx)
             wconf = True
-        elif ctx.has_binary("dialog"):
+        elif sys.stdin.isatty():
             can_install_mate = bool(
                 ctx.have_altsp
                 and not ctx.have_xorg

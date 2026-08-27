@@ -33,11 +33,14 @@ class BatchHandoffTests(unittest.TestCase):
 
     @patch("hw_test.steps.config.sys.stdin.isatty", return_value=True)
     @patch("hw_test.steps.config.graphical_session", return_value=False)
-    def test_config_handoff_with_tty(self, _gs: object, _tty: object) -> None:
+    @patch("hw_test.user_handoff.graphical_session", return_value=False)
+    def test_config_no_handoff_headless_with_tty(
+        self, _gs_h: object, _gs: object, _tty: object
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             ctx = self._ctx_with_plan(tmp, "config")
             ctx.batchmode = ""
-            self.assertTrue(step_needs_user_handoff(ctx, "config"))
+            self.assertFalse(step_needs_user_handoff(ctx, "config"))
 
     @patch("hw_test.user_handoff.create_step")
     def test_express_handoff_when_enabled(self, create_step: MagicMock) -> None:

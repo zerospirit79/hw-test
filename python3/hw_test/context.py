@@ -334,6 +334,14 @@ class RuntimeContext:
         src = Path(self.workdir) / "STATE" / "settings.ini"
         dst = Path(self.workdir) / outfile
         dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        # Avoid dumping dozens of colored lines on the console (looks like a "spread"
+        # screen after the test-plan form); keep a short summary instead.
+        if not graphical_session():
+            print(
+                f"{self.CLR_OK}Settings saved:{self.CLR_NORM} {dst}",
+                flush=True,
+            )
+            return
         for line in src.read_text(encoding="utf-8").splitlines():
             if "=" not in line:
                 continue
@@ -467,9 +475,24 @@ class RuntimeContext:
         if not self.batchmode:
             from hw_test.terminal import read_key
 
-            msg = self.L("L052", "The update is complete. Press any key to reboot...")
-            print(f"\n{msg}", flush=True)
-            read_key()
+            # On Server/console, "press any key" often waits on the wrong pts after
+            # sudo/openvt; use a short countdown so reboot always happens.
+            if graphical_session():
+                msg = self.L("L052", "The update is complete. Press any key to reboot...")
+                print(f"\n{msg}", flush=True)
+                read_key()
+            else:
+                wait_s = 10
+                msg = self.L(
+                    "L053",
+                    "The update is complete. After %s seconds the system will reboot...",
+                )
+                print(f"\n{msg % wait_s}", flush=True)
+                print(
+                    self.L("L052", "The update is complete. Press any key to reboot..."),
+                    flush=True,
+                )
+                read_key(timeout=float(wait_s))
         else:
             msg = self.L(
                 "L053", "The update is complete. After %s seconds the system will reboot..."

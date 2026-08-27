@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from hw_test.context import RuntimeContext, graphical_session
@@ -31,6 +32,10 @@ def step_needs_user_handoff(ctx: RuntimeContext, stepname: str) -> bool:
     if role == "root":
         return False
     if role not in ("user", "both"):
+        return False
+    # Headless config uses a console TUI; root can run it on the same tty.
+    # openvt nesting otherwise leaves "press any key" on another pts.
+    if stepname == "config" and not graphical_session():
         return False
     step = create_step(stepname, ctx)
     return step.pre() != TEST_SKIPPED
@@ -201,7 +206,7 @@ def handoff_to_user_session(ctx: RuntimeContext) -> None:
         next_step == "config"
         and not graphical_session()
         and ctx.username
-        and ctx.has_binary("dialog")
+        and not sys.stdin.isatty()
     ):
         from hw_test.de_terminal import spawn_continue_on_vt
 

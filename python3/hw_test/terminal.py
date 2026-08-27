@@ -170,36 +170,61 @@ def close_kgx_window(*, uid: int | None = None) -> None:
     _pkill_pc_test_kgx(target_uid)
 
 
-def read_key(*, abort_on_ctrl_c: bool = False) -> bool:
-    """Read one key in raw mode.
+def read_key(*, abort_on_ctrl_c: bool = False, timeout: float | None = None) -> bool:
+    """Read one key from the controlling terminal (``/dev/tty``).
 
-    Returns False if the user pressed Ctrl-C and abort_on_ctrl_c is True.
-    Otherwise returns True.
+    Returns False if the user pressed Ctrl-C and abort_on_ctrl_c is True,
+    or if ``timeout`` expired with no input. Otherwise returns True.
     """
-    if not sys.stdin.isatty():
-        return True
-    try:
-        import termios
-        import tty
+    import select
+    import termios
+    import tty
 
-        fd = sys.stdin.fileno()
+    tty_path = Path("/dev/tty")
+    if not tty_path.exists() and not sys.stdin.isatty():
+        return True
+
+    fd: int | None = None
+    owned = False
+    old = None
+    try:
+        if tty_path.exists():
+            fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+            owned = True
+        elif sys.stdin.isatty():
+            fd = sys.stdin.fileno()
+        else:
+            return True
         old = termios.tcgetattr(fd)
-        try:
-            tty.setraw(fd)
-            ch = sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old)
-    except KeyboardInterrupt:
+        tty.setraw(fd)
+        if timeout is None:
+            ready, _, _ = select.select([fd], [], [])
+        else:
+            ready, _, _ = select.select([fd], [], [], timeout)
+        if not ready:
+            return False
+        ch = os.read(fd, 1)
+        if abort_on_ctrl_c and ch == b"\x03":
+            print(flush=True)
+            return False
+        print(flush=True)
+        return True
+    except (termios.error, OSError, KeyboardInterrupt):
         print(flush=True)
         if abort_on_ctrl_c:
             return False
-        raise
-    except Exception:
         return True
-    print(flush=True)
-    if abort_on_ctrl_c and ch == "\x03":
-        return False
-    return True
+    finally:
+        if fd is not None and old is not None:
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            except termios.error:
+                pass
+        if owned and fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 
 def close_desktop_terminal_if_needed(*, uid: int | None = None) -> None:

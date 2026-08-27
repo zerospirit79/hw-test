@@ -37,13 +37,10 @@ class HeadlessResumeMarkerTests(unittest.TestCase):
             self.assertTrue(enable_headless_resume("hw-test", "test", str(home)))
             marker = home / "HW-TEST" / "STATE" / RESUME_ON_LOGIN
             self.assertTrue(marker.is_file())
-            disable_calls = [
-                c for c in run.call_args_list if c[0][0][:2] == ["systemctl", "disable"]
-            ]
+            self.assertFalse(run.called)
             enable_calls = [
                 c for c in run.call_args_list if c[0][0][:2] == ["systemctl", "enable"]
             ]
-            self.assertTrue(disable_calls)
             self.assertFalse(enable_calls)
 
     @patch("hw_test.resume_autorun.system_template_unit")
