@@ -4,8 +4,17 @@ from __future__ import annotations
 
 import os
 
-from hw_test.constants import TEST_ALLOWED, TEST_BLOCKED, TEST_FAILED, TEST_SKIPPED
+from hw_test.constants import (
+    TEST_ALLOWED,
+    TEST_BLOCKED,
+    TEST_FAILED,
+    TEST_PASSED,
+    TEST_SKIPPED,
+)
 from hw_test.steps.base import StepBase, register_step
+
+# fwupdmgr: EXIT_NOTHING_TO_DO (нет устройств / нет обновлений)
+FWUPD_NOTHING_TO_DO = 2
 
 
 @register_step
@@ -29,23 +38,30 @@ class FwupdStep(StepBase):
             os.environ["LANG"] = "C"
             os.environ["LC_ALL"] = "C"
 
-        rc = TEST_ALLOWED
+        # Методика, раздел 6: отсутствие поддерживаемых устройств — ошибка,
+        # отсутствие обновлений для них — норма.
         print("===[ Devices list:")
-        if ctx.spawn("fwupdmgr", "get-devices") != 0:
-            rc = TEST_BLOCKED
+        rc = ctx.spawn("fwupdmgr", "get-devices")
         print("===]\n")
+        if rc == FWUPD_NOTHING_TO_DO:
+            ctx.spawn(": No devices supporting firmware update")
+            return TEST_FAILED
+        if rc != 0:
+            return TEST_BLOCKED
 
         print("===[ Updates list:")
-        if ctx.spawn("fwupdmgr", "get-updates", "-y") != 0:
-            rc = TEST_BLOCKED
+        rc = ctx.spawn("fwupdmgr", "get-updates", "-y")
         print("===]\n")
+        if rc == FWUPD_NOTHING_TO_DO:
+            ctx.spawn(": No firmware updates available")
+            return TEST_PASSED
+        if rc != 0:
+            return TEST_BLOCKED
 
-        if rc == TEST_ALLOWED:
-            print("===[ Update process:")
-            if ctx.spawn("fwupdmgr", "update") != 0:
-                rc = TEST_FAILED
-            print("===]\n")
-            if ctx.have_systemd:
-                ctx.stop_journald()
-            ctx.system_restart(rc)
+        print("===[ Update process:")
+        rc = TEST_PASSED if ctx.spawn("fwupdmgr", "update", "-y") == 0 else TEST_FAILED
+        print("===]\n")
+        if ctx.have_systemd:
+            ctx.stop_journald()
+        ctx.system_restart(rc)
         return rc

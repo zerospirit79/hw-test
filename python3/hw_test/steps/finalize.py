@@ -40,4 +40,7 @@ class FinalizeStep(StepBase):
 
         if report.aer_count > 9:
             return TEST_FAILED
+        # 10.11: panic/oops/BUG/MCE/I/O error в текущей загрузке — тест не пройден
+        if any(f.severity == "critical" for f in report.findings):
+            return TEST_FAILED
         return TEST_PASSED

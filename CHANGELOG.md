@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- ALT #58367: express test no longer asks for a password on hibernate/suspend
+  (`sudo dmesg` replaced with plain/`sudo -n` call; `*.dmesg.gz` is real gzip).
+- ALT #53470: manual checks at the end of the express test wait for «OK»
+  up to 5 minutes instead of a fixed 40 seconds.
+- Step 6 (fwupd): no supported devices is FAILED, no updates is PASSED
+  (methodology section 6), reboot only after a real update.
+- Express volume uses `@DEFAULT_SINK@` and the methodology sequence
+  (75→25 %, 100→50 % after hibernate, 75→25 % after suspend).
+- Hibernation is skipped (not failed) when SWAP is smaller than RAM.
+
+### Changed
+
+- Step 10.1: added 60 s all-core `stress-ng --cpu N` load with per-core idle/loaded
+  frequencies and a check of new kernel messages.
+- Step 11.2: glmark2 is blocked on software rendering, fails on non-zero exit,
+  missing score or critical kernel messages.
+- Step 10.11: critical kernel messages (panic/oops/BUG/MCE/I/O error) fail the step.
+
 ## [2.2.1-alt1] - 2026-08-26
 
 ### Fixed

@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import List, Optional
 
 from hw_test.constants import TEST_BLOCKED, TEST_FAILED, TEST_PASSED
+from hw_test.log_analysis import (
+    analyze_collected_logs,
+    dmesg_delta,
+    emit_report_to_log,
+    read_dmesg,
+)
 from hw_test.steps.base import StepBase, register_step
 
 CPU_LEFT = Path("/sys/devices/system/cpu")
@@ -106,6 +112,44 @@ def _run_cpu_load_test(ctx, cpu: int = 0) -> tuple[int, int]:
     )
     ctx.spawn("cpupower", "monitor")
     return max_observed, stress_rc
+
+
+def _all_core_threshold(maxf: str, minf: str) -> int:
+    """Each core under full load must get at least halfway from min to max."""
+    return int(minf) + (int(maxf) - int(minf)) // 2
+
+
+def _run_all_cores_load_test(ctx, n_cores: int) -> tuple[List[int], List[int], int]:
+    """Methodology 10.1: stress-ng on all cores, record idle and loaded per-core freqs."""
+    badv = 99999999999
+    idle = _read_freq(n_cores)
+    cmd = [
+        "stress-ng",
+        "--cpu",
+        str(n_cores),
+        "--cpu-method",
+        "matrixprod",
+        "--metrics",
+        "--timeout",
+        "60s",
+    ]
+    ctx.cmd_title(" ".join(cmd))
+    proc = subprocess.Popen(cmd)
+    loaded = [0] * n_cores
+    try:
+        while proc.poll() is None:
+            for i, freq in enumerate(_read_freq(n_cores)):
+                if freq != badv:
+                    loaded[i] = max(loaded[i], freq)
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        proc.terminate()
+        proc.wait()
+        ctx.fatal("F20", "Testing canceled.")
+    stress_rc = proc.wait()
+    ctx.spawn(": Idle:   " + " ".join(f"Core{i}: {f // 1000}" for i, f in enumerate(idle)))
+    ctx.spawn(": Loaded: " + " ".join(f"Core{i}: {f // 1000}" for i, f in enumerate(loaded)))
+    return idle, loaded, stress_rc
 
 
 @register_step
@@ -296,12 +340,29 @@ class CpupowerStep(StepBase):
             except OSError:
                 pass
 
+        dmesg_before = read_dmesg()
         max_observed, _stress_rc = _run_cpu_load_test(ctx)
         if scaling and rc is None:
             threshold = _stress_khz_threshold(maxf, minf)
             ctx.spawn(f": load frequency threshold: {threshold} kHz")
             if max_observed < threshold:
                 rc = TEST_FAILED
+
+        _idle, loaded, stress_rc = _run_all_cores_load_test(ctx, n_cores)
+        if stress_rc != 0:
+            ctx.spawn(f": stress-ng exit code: {stress_rc}")
+            rc = TEST_FAILED
+        if scaling and rc is None:
+            threshold = _all_core_threshold(maxf, minf)
+            ctx.spawn(f": all-core load frequency threshold: {threshold} kHz")
+            if any(f < threshold for f in loaded):
+                rc = TEST_FAILED
+
+        new_lines = dmesg_delta(dmesg_before, read_dmesg())
+        report = analyze_collected_logs(dmesg=new_lines)
+        emit_report_to_log(ctx, report, outfile="log-analysis-cpupower.txt")
+        if any(f.severity == "critical" for f in report.findings):
+            rc = TEST_FAILED
 
         if noturbo:
             try:

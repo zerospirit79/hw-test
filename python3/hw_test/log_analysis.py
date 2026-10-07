@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -104,6 +105,21 @@ def analyze_dmesg_lines(lines: Iterable[str]) -> tuple[list[LogFinding], int]:
         if DMESG_ERROR_PATTERN.search(line):
             _merge_finding(findings, "error", "dmesg", line.strip())
     return findings, aer_count
+
+
+def dmesg_delta(before: str, after: str) -> str:
+    """Return dmesg lines that appeared after the ``before`` snapshot."""
+    seen = set(before.splitlines())
+    return "\n".join(ln for ln in after.splitlines() if ln not in seen)
+
+
+def read_dmesg() -> str:
+    """Current kernel ring buffer as plain text (empty on failure)."""
+    try:
+        proc = subprocess.run(["dmesg"], capture_output=True, text=True, check=False)
+    except OSError:
+        return ""
+    return proc.stdout or ""
 
 
 def analyze_journal_err_lines(lines: Iterable[str]) -> list[LogFinding]:
