@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Draft testing protocol `protocol.md` / `protocol.html` in the workdir
+  (methodology 12.4/12.5): title page from collected data, table of all
+  methodology items with statuses of automated steps, command outputs and
+  tester comments; written after the first part and before archiving.
+- Step 11.1: per-device fio summary table `fio-<dev>/summary.md`
+  (IOPS, BW, clat in usec, CPU usr/sys/ctx — methodology 11.1.8).
+- Step 10.1: `cpu-freq.txt` with spec/idle/loaded per-core frequencies.
+
 ### Fixed
 
 - ALT #58367: express test no longer asks for a password on hibernate/suspend

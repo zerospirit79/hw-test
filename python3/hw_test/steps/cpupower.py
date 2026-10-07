@@ -114,6 +114,23 @@ def _run_cpu_load_test(ctx, cpu: int = 0) -> tuple[int, int]:
     return max_observed, stress_rc
 
 
+def format_cpu_freq_report(minf: str, maxf: str, idle: List[int], loaded: List[int]) -> str:
+    """Protocol fragment for 10.1 (MHz), as in the methodology example 12.5."""
+
+    def cores(values: List[int]) -> str:
+        return " ".join(
+            f"Core{i}: {v // 1000 if 0 < v < 99999999999 else 'n/a'}"
+            for i, v in enumerate(values)
+        )
+
+    spec = f"{int(minf) // 1000}~{int(maxf) // 1000} MHz" if minf and maxf else "n/a"
+    return (
+        f"Спецификация (cpufreq): {spec}\n"
+        f"Без нагрузки: {cores(idle)}\n"
+        f"С нагрузкой: {cores(loaded)}\n"
+    )
+
+
 def _all_core_threshold(maxf: str, minf: str) -> int:
     """Each core under full load must get at least halfway from min to max."""
     return int(minf) + (int(maxf) - int(minf)) // 2
@@ -348,7 +365,10 @@ class CpupowerStep(StepBase):
             if max_observed < threshold:
                 rc = TEST_FAILED
 
-        _idle, loaded, stress_rc = _run_all_cores_load_test(ctx, n_cores)
+        idle, loaded, stress_rc = _run_all_cores_load_test(ctx, n_cores)
+        Path("cpu-freq.txt").write_text(
+            format_cpu_freq_report(minf, maxf, idle, loaded), encoding="utf-8"
+        )
         if stress_rc != 0:
             ctx.spawn(f": stress-ng exit code: {stress_rc}")
             rc = TEST_FAILED

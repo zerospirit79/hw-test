@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List
 
 from hw_test.constants import TEST_FAILED, TEST_PASSED, TEST_SKIPPED
+from hw_test.fio_report import FIO_TESTS, format_fio_table, parse_fio_log
 from hw_test.steps.base import StepBase, register_step
 
 FS_MIN = 8589934592  # 8 GiB
@@ -246,4 +247,24 @@ class DiskperfStep(StepBase):
             if last and re.search(r"^FAILED:", last[-1]):
                 rc = 1
             (work / f"{name}.fio").unlink(missing_ok=True)
+        self._write_summary(work)
         return rc
+
+    def _write_summary(self, work: Path) -> None:
+        """Methodology 11.1.8: per-device table of IOPS, BW, clat and CPU load."""
+        ctx = self.ctx
+        rows = []
+        for test in FIO_TESTS:
+            log = work / f"{test}.log"
+            if log.is_file():
+                res = parse_fio_log(test, log.read_text(encoding="utf-8", errors="replace"))
+                if res:
+                    rows.append(res)
+        if not rows:
+            return
+        text = "\n".join(format_fio_table(rows)) + "\n"
+        (work / "summary.md").write_text(text, encoding="utf-8")
+        print(text)
+        if ctx.logfile and Path(ctx.logfile).is_file():
+            with open(ctx.logfile, "a", encoding="utf-8") as lf:
+                lf.write(f"{work.name}:\n{text}")
