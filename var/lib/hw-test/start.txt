@@ -8,3 +8,12 @@ root	syslogs
 root	collect
 user	express
 root	cpupower
+root	network
+root	numa
+root	ipmi
+user	sound
+user	webcam
+user	bluez
+both	fprnt
+both	scard
+root	power

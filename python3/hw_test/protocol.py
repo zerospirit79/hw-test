@@ -134,7 +134,12 @@ ITEMS: tuple[Item, ...] = (
     ),
     Item("9", "Экспресс-тест основных компонентов", "express"),
     Item("10.1", "Проверка CPU под нагрузкой", "cpupower", _file_evidence("cpu-freq.txt")),
-    Item("10.2.1", "Проверка Ethernet (при наличии)"),
+    Item(
+        "10.2.1",
+        "Проверка Ethernet (при наличии)",
+        "",
+        _file_evidence("network.txt"),
+    ),
     Item("10.2.2", "Проверка Wi-Fi (при наличии)"),
     Item("10.2.3", "Проверка Infiniband/RDMA (при наличии)"),
     Item("10.2.4", "Проверка производительности сетевых интерфейсов"),
@@ -178,20 +183,35 @@ ITEMS: tuple[Item, ...] = (
     Item("10.7.1.1", "Проверка реакции на подключение/отключение внешнего БП"),
     Item("10.7.1.2", "Проверка изменения яркости экрана"),
     Item("10.7.2", "Проверка энергосбережения в консоли"),
-    Item("10.8", "Проверка NUMA (при наличии)"),
-    Item("10.9", "Проверка IPMI (при наличии)"),
+    Item("10.8", "Проверка NUMA (при наличии)", "numa", _file_evidence("numa.txt")),
+    Item("10.9", "Проверка IPMI (при наличии)", "ipmi", _file_evidence("ipmi.txt")),
     Item("10.10.1", "Проверка интерфейса eSATA (при наличии)"),
     Item("10.10.2", "Проверка сенсорного экрана (при наличии)"),
-    Item("10.10.3", "Проверка встроенной камеры (при наличии)"),
+    Item("10.10.3", "Проверка встроенной камеры (при наличии)", "webcam"),
     Item("10.10.4", "Проверка интерфейса PS/2 (при наличии)"),
     Item("10.10.5", "Проверка работы сенсорной панели (при наличии)"),
     Item("10.10.6", "Проверка функциональных клавиш клавиатуры (при наличии)"),
-    Item("10.10.7", "Проверка работы сканера отпечатка пальца (при наличии)"),
+    Item(
+        "10.10.7",
+        "Проверка работы сканера отпечатка пальца (при наличии)",
+        "fprnt",
+        _file_evidence("fprintd.txt"),
+    ),
     Item("10.10.8", "Проверка интерфейсов USB 1.0-3.2"),
     Item("10.10.9", "Проверка USB 3.2 Gen2/USB4 и Thunderbolt 3/4 (при наличии)"),
-    Item("10.10.10", "Проверка Bluetooth (при наличии)"),
+    Item(
+        "10.10.10",
+        "Проверка Bluetooth (при наличии)",
+        "bluez",
+        _file_evidence("bluetooth.txt"),
+    ),
     Item("10.10.11", "Проверка разъёма для карт памяти (при наличии)"),
-    Item("10.10.12", "Проверка разъёма для смарт-карт (при наличии)"),
+    Item(
+        "10.10.12",
+        "Проверка разъёма для смарт-карт (при наличии)",
+        "scard",
+        _file_evidence("smartcard.txt"),
+    ),
     Item("10.10.13", "Проверка привода CD/DVD/Blu-ray (при наличии)"),
     Item("10.11", "Контрольная проверка сообщений ядра", "finalize"),
     Item("11.1", "Производительность дисковой подсистемы", "diskperf", _fio_evidence),
@@ -219,14 +239,39 @@ def read_results(workdir: Path) -> dict[str, int]:
     return out
 
 
+def read_subresults(workdir: Path) -> dict[str, str]:
+    """Statuses of methodology sub-items written by steps (results-<step>.txt)."""
+    out: dict[str, str] = {}
+    for path in sorted(Path(workdir).glob("results-*.txt")):
+        for line in _read(path).splitlines():
+            parts = line.split("\t", 1)
+            if len(parts) == 2 and parts[1].strip():
+                out[parts[0].strip()] = parts[1].strip()
+    return out
+
+
+def _subresult(sub: dict[str, str], number: str) -> str:
+    """Status of the item or of its nearest parent (10.4.1.3 -> 10.4.1)."""
+    parts = number.split(".")
+    while parts:
+        key = ".".join(parts)
+        if key in sub:
+            return sub[key]
+        parts.pop()
+    return ""
+
+
 def build_rows(workdir: Path) -> list[Row]:
     wd = Path(workdir)
     results = read_results(wd)
+    sub = read_subresults(wd)
     rows = []
     for item in ITEMS:
         status = ""
         if item.step and item.step in results:
             status = STATUS_NAMES.get(results[item.step], str(results[item.step]))
+        elif not item.step:
+            status = _subresult(sub, item.number)
         rows.append(
             Row(
                 number=item.number,
