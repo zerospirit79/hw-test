@@ -1,5 +1,45 @@
 # Changelog
 
+## [2.3.0-alt1] - 2026-10-07
+
+### Added
+
+- ALT #53400: test plan options now run real steps — network 10.2.1-10.2.3
+  (ip/ping per interface, ibv_devices), NUMA 10.8 (stress-ng bound to each node,
+  verified via numa_maps and CPU affinity), IPMI 10.9 (in-band mc/chassis/sensor),
+  console power 10.6.2 (suspend/hibernate with RTC wake alarm, reboot, power off,
+  resumable after boot), sound 10.4, webcam 10.10.3, Bluetooth 10.10.10,
+  fingerprint 10.10.7 and smart cards 10.10.12 with the tester's verdict
+  (yad form or console prompt). Sub-item results go to the protocol.
+- Draft testing protocol `protocol.md` / `protocol.html` in the workdir
+  (methodology 12.4/12.5): title page from collected data, table of all
+  methodology items with statuses of automated steps, command outputs and
+  tester comments; written after the first part and before archiving.
+- Step 11.1: per-device fio summary table `fio-<dev>/summary.md`
+  (IOPS, BW, clat in usec, CPU usr/sys/ctx — methodology 11.1.8).
+- Step 10.1: `cpu-freq.txt` with spec/idle/loaded per-core frequencies.
+
+### Fixed
+
+- ALT #58367: express test no longer asks for a password on hibernate/suspend
+  (`sudo dmesg` replaced with plain/`sudo -n` call; `*.dmesg.gz` is real gzip).
+- ALT #53470: manual checks at the end of the express test wait for «OK»
+  up to 5 minutes instead of a fixed 40 seconds.
+- Step 6 (fwupd): no supported devices is FAILED, no updates is PASSED
+  (methodology section 6), reboot only after a real update.
+- Express volume uses `@DEFAULT_SINK@` and the methodology sequence
+  (75→25 %, 100→50 % after hibernate, 75→25 % after suspend).
+- Hibernation is skipped (not failed) when SWAP is smaller than RAM.
+
+### Changed
+
+- Step 5.5: NUMA option is cleared (not forced on) when its packages are unavailable.
+- Step 10.1: added 60 s all-core `stress-ng --cpu N` load with per-core idle/loaded
+  frequencies and a check of new kernel messages.
+- Step 11.2: glmark2 is blocked on software rendering, fails on non-zero exit,
+  missing score or critical kernel messages.
+- Step 10.11: critical kernel messages (panic/oops/BUG/MCE/I/O error) fail the step.
+
 ## [2.2.1-alt1] - 2026-08-26
 
 ### Fixed

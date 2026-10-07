@@ -29,6 +29,7 @@ from hw_test.constants import (
 from hw_test.context import FatalError, RuntimeContext, get_context, graphical_session, set_context
 from hw_test.launch_mode import resolve_launch_mode, start_new_run
 from hw_test.paths import PROGNAME, libexec_dir
+from hw_test.protocol import write_protocol
 from hw_test.resume_autorun import clear_resume_autorun, setup_resume_autorun
 from hw_test.steps import create_step, list_steps
 from hw_test.terminal import close_desktop_terminal_if_needed, read_key, test_user_uid
@@ -637,6 +638,17 @@ def _express_pause_message(ctx: RuntimeContext) -> None:
         print(f"Continue testing with: {cmd}\n")
 
 
+def _write_protocol(ctx: RuntimeContext) -> None:
+    """Draft protocol (methodology 12.4/12.5) for the tester to complete."""
+    try:
+        _md, page = write_protocol(Path(ctx.workdir))
+    except OSError as e:
+        print(f"{ctx.CLR_WARN}protocol: {e}{ctx.CLR_NORM}")
+        return
+    label = "Черновик протокола" if ctx.langid == "ru" else "Protocol draft"
+    print(f"{label}: {ctx.bold(str(page))}")
+
+
 def _final_message(ctx: RuntimeContext) -> None:
     remaining = _start_plan_remaining(ctx)
     if ctx.testplan == "start.txt" and remaining:
@@ -664,6 +676,8 @@ def _final_message(ctx: RuntimeContext) -> None:
         print(ctx.L("L005", "Perform manual testing according to section 10 of the methodology."))
         msg = ctx.L("L006", "Don't forget to run '%s' after testing!")
         print(msg.replace("@BOLD@", ctx.bold(f"{ctx.progname} --finish")))
+        _write_protocol(ctx)
+        ctx.chown_workdir_for_user()
         return
 
     stepname = f"{ctx.progname}-{Path(ctx.workdir).name}.tar"
@@ -673,6 +687,7 @@ def _final_message(ctx: RuntimeContext) -> None:
     shutil.move(wd / "STATE/RESULTS", wd / "RESULTS")
     shutil.move(wd / "STATE/settings.ini", wd / "settings.ini")
     shutil.rmtree(wd / "STATE", ignore_errors=True)
+    _write_protocol(ctx)
     home = Path(ctx.homedir or os.environ.get("HOME", ""))
     archive = home / stepname
     with tarfile.open(archive, "w") as tar:

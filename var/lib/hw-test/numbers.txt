@@ -4,6 +4,15 @@
 8	collect
 9	express
 10.1	cpupower
+10.2	network
+10.4	sound
+10.6.2	power
+10.8	numa
+10.9	ipmi
+10.10.3	webcam
+10.10.7	fprnt
+10.10.10	bluez
+10.10.12	scard
 11.1	diskperf
 11.2	glmark
 10.11	finalize

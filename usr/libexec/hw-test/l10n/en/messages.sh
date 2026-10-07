@@ -86,3 +86,6 @@ L321="$L321 the result here. If the reason for skipping or failing"
 L321="$L321 a test is not obvious, please leave your comments here."
 L322="Result"
 
+L323="Press «OK» when manual checks are done. The computer will"
+L323="$L323 reboot automatically in %s seconds."
+L324="SWAP is smaller than RAM, hibernation check is skipped"

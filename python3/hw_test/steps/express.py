@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import os
 import random
 import re
@@ -22,6 +23,16 @@ from hw_test.context import graphical_session
 from hw_test.de_terminal import prepare_user_session_env
 from hw_test.gui import forms
 from hw_test.steps.base import StepBase, register_step
+
+DEFAULT_SINK = "@DEFAULT_SINK@"
+
+# Методика, раздел 9: громкость ~75% -> ~25%, после «спящего» 100% -> ~50%,
+# после «ждущего» ~75% -> ~25% (пауза 10 секунд между значениями).
+VOLUME_STEPS = {
+    "settings": (75, 25),
+    "hibernate": (100, 50),
+    "suspend": (75, 25),
+}
 
 EXPRESS_FILES = [
     "express.step",
@@ -46,6 +57,44 @@ EXPRESS_FILES = [
     "h.status",
     "s.status",
 ]
+
+
+MANUAL_CHECKS_TIMEOUT = 300
+
+
+def swap_fits_ram(meminfo: str | None = None) -> bool:
+    """Methodology 10.6.1.3: hibernation needs SWAP not smaller than RAM.
+
+    swapon/meminfo report slightly less than physical RAM, so allow 5%.
+    """
+    if meminfo is None:
+        try:
+            meminfo = Path("/proc/meminfo").read_text()
+        except OSError:
+            return True
+    values = {}
+    for ln in meminfo.splitlines():
+        parts = ln.split()
+        if len(parts) >= 2 and parts[0] in ("MemTotal:", "SwapTotal:"):
+            values[parts[0]] = int(parts[1])
+    mem = values.get("MemTotal:", 0)
+    swap = values.get("SwapTotal:", 0)
+    return mem == 0 or swap >= mem * 0.95
+
+
+def save_dmesg_gz(path: str) -> bool:
+    """Save colored dmesg gzipped; never prompt for a password (ALT #58367)."""
+    args = ["dmesg", "-H", "-P", "--color=always"]
+    for cmd in (args, ["sudo", "-n", *args]):
+        try:
+            proc = subprocess.run(cmd, capture_output=True, check=False)
+        except OSError:
+            continue
+        if proc.returncode == 0 and proc.stdout:
+            with gzip.open(path, "wb") as gz:
+                gz.write(proc.stdout)
+            return True
+    return False
 
 
 def express_video_url(ctx) -> str:
@@ -415,11 +464,11 @@ class ExpressStep(StepBase):
     def _set_audio_volume(self, volume: int) -> None:
         ctx = self.ctx
         if volume == 0:
-            ctx.spawn("pactl", "set-sink-mute", "0", "1")
+            ctx.spawn("pactl", "set-sink-mute", DEFAULT_SINK, "1")
         else:
-            ctx.spawn("pactl", "set-sink-mute", "0", "0")
+            ctx.spawn("pactl", "set-sink-mute", DEFAULT_SINK, "0")
             sound = "/usr/share/sounds/freedesktop/stereo/audio-volume-change.oga"
-            if ctx.spawn("pactl", "set-sink-volume", "0", f"{volume}%") == 0:
+            if ctx.spawn("pactl", "set-sink-volume", DEFAULT_SINK, f"{volume}%") == 0:
                 for _ in range(5):
                     ctx.spawn("paplay", sound)
 
@@ -464,10 +513,12 @@ class ExpressStep(StepBase):
         )
         self._set_audio_volume(0)
         time.sleep(15)
-        self._set_audio_volume(75)
-        time.sleep(15)
-        self._set_audio_volume(25)
-        time.sleep(15)
+        self._volume_sequence("settings")
+
+    def _volume_sequence(self, phase: str) -> None:
+        for volume in VOLUME_STEPS[phase]:
+            self._set_audio_volume(volume)
+            time.sleep(10)
 
     def _try_hibernate(self) -> None:
         self._try_sleep("hibernate", "HIBERNATE", "L257")
@@ -481,6 +532,10 @@ class ExpressStep(StepBase):
             ["systemctl", "status", f"{target}.target"], capture_output=True, text=True
         )
         if re.search(r"^\s+Loaded: masked ", masked.stdout or "", re.M):
+            return
+        if target == "hibernate" and not swap_fits_ram():
+            msg = ctx.L("L324", "SWAP is smaller than RAM, hibernation check is skipped")
+            ctx.spawn(f": {msg}")
             return
         started = Path(f"./{prefix}-STARTED")
         if started.is_file():
@@ -500,12 +555,9 @@ class ExpressStep(StepBase):
         subprocess.run(
             ["systemctl", "status", svc], stdout=open(f"{target[0]}.status", "w"), check=False
         )
-        subprocess.run(
-            ["sudo", "dmesg", "-H", "-P", "--color=always"],
-            stdout=open(f"{target[0]}.dmesg.gz", "wb"),
-            check=False,
-        )
+        save_dmesg_gz(f"{target[0]}.dmesg.gz")
         subprocess.run(["notify-send", self.title(), ctx.L("L267", "Click Play")], check=False)
+        self._volume_sequence(target)
 
     def _additional_hw(self, brpid: str) -> str:
         ctx = self.ctx
@@ -525,7 +577,7 @@ class ExpressStep(StepBase):
             time.sleep(20)
         if not ctx.check_internet():
             self._save_date("NETWORK-FAILED")
-        t = 40
+        t = 40 if ctx.batchmode else MANUAL_CHECKS_TIMEOUT
         l256 = ctx.L("L256", "Manual mode %s sec")
         try:
             notify_text = l256 % (t,)
@@ -535,7 +587,25 @@ class ExpressStep(StepBase):
             ["notify-send", self.title(), notify_text],
             check=False,
         )
-        time.sleep(t)
+        if ctx.batchmode or not ctx.has_binary("yad"):
+            time.sleep(t)
+            return brpid
+        l323 = ctx.L("L323", "Press OK when manual checks are done (%s sec)")
+        subprocess.run(
+            [
+                "yad",
+                *forms._yad_window_args(width=520),
+                "--window-icon=utilities-system-monitor",
+                f"--title={self.title()}",
+                f"--text={l323.replace('%s', str(t), 1)}",
+                "--button=OK:0",
+                "--timeout-indicator=bottom",
+                f"--timeout={t}",
+            ],
+            stderr=open(ctx.xorglog, "a") if ctx.xorglog else subprocess.DEVNULL,
+            env=forms._gui_env(),
+            check=False,
+        )
         return brpid
 
     def _has_dualnet(self) -> tuple[str, str]:

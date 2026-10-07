@@ -74,10 +74,11 @@ class InstallStep(StepBase):
                 packages.append("upower")
 
         if ctx.numa_test:
-            numa_list = ["htop", "numactl", "squashfs-tools"]
+            numa_list = ["numactl", "htop"]
             ok = all(ctx.is_pkg_installed(p) or ctx.is_pkg_available(p) for p in numa_list)
             if not ok:
-                ctx.numa_test = "1"
+                ctx.numa_test = ""
+                wconf = True
             else:
                 for pkg in numa_list:
                     if not ctx.is_pkg_installed(pkg):

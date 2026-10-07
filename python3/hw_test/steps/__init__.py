@@ -2,7 +2,9 @@
 
 Порядок в плане (var/lib/hw-test/start.txt), не порядок импорта:
   prepare (5.1) → upgrade → detect (5.3) → config (5.4) → install →
-  fwupd → syslogs (7) → collect (8) → express (9) → cpupower (10.1)
+  fwupd → syslogs (7) → collect (8) → express (9) → cpupower (10.1) →
+  network (10.2) → numa (10.8) → ipmi (10.9) → sound (10.4) → webcam (10.10.3) →
+  bluez (10.10.10) → fprnt (10.10.7) → scard (10.10.12) → power (10.6.2)
 
 Финальная фаза (finish.txt): diskperf (11.1) → glmark (11.2) → finalize (10.11)
 """
@@ -19,6 +21,11 @@ from hw_test.steps import (  # noqa: F401
     fwupd,
     glmark,
     install,
+    ipmi,
+    network,
+    numa,
+    peripherals,
+    power,
     prepare,
     syslogs,
     upgrade,
