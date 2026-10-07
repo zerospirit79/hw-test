@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.3.0-alt1] - 2026-10-07
 
 ### Added
 
